@@ -180,7 +180,7 @@ function renderHome(){
     ${mine.length ? `<div class="stack">${mine.map(t => {
       const other = member(t.room.id, t.dir==="owe" ? t.to : t.from);
       return `<div class="debt">${avatar(other)}
-        <div class="who"><b>${t.dir==="owe" ? "À " : "De "}${esc(other.name)}</b><small>${esc(t.room.name)}</small></div>
+        <div class="who"><b>${t.dir==="owe" ? `Tu dois à ${esc(other.name)}` : `${esc(other.name)} te doit`}</b><small>${esc(t.room.name)}</small></div>
         <span class="amt ${t.dir}">${money(t.amount)}</span>
         <button class="pill-btn" data-act="settle" data-room="${t.room.id}" data-from="${t.from}" data-to="${t.to}" data-amount="${t.amount}">Réglé</button>
       </div>`; }).join("")}</div>` : ""}
@@ -229,7 +229,7 @@ function renderRoom(rid){
         <div class="me-amt ${myB<0?"owe":"owed"}">${myB ? money(Math.abs(myB)) : esc(congrats(rid+me.id))}</div>
         ${myB ? "" : `<span class="hint">Tu ne dois rien et on ne te doit rien dans ce groupe. Merci d'être réglo !</span>`}</div></div>
       ${mineT.map(t => { const o = member(rid, t.from===me.id ? t.to : t.from), out = t.from===me.id;
-        return `<div class="row" style="background:var(--surface-2)">${avatar(o,"sm")}<div class="grow"><div class="t">${out?"Rembourser ":"Attendre "}${esc(o.name)}</div></div>
+        return `<div class="row" style="background:var(--surface-2)">${avatar(o,"sm")}<div class="grow"><div class="t">${out ? `Tu dois à ${esc(o.name)}` : `${esc(o.name)} te doit`}</div></div>
           <b class="num" style="color:var(${out?"--owe":"--owed"})">${money(t.amount)}</b>
           <button class="pill-btn" data-act="settle" data-room="${rid}" data-from="${t.from}" data-to="${t.to}" data-amount="${t.amount}">Réglé</button></div>`; }).join("")}
     </div>`;
