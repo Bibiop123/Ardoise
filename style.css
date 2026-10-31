@@ -246,3 +246,12 @@ input[type=text],input[type=date],input[type=number],input[type=password]{border
 .chrono-pill.paused #chrono-time{color:var(--muted)}
 .chrono-reset{border:0;background:var(--surface-2);color:var(--ink);border-radius:50%;width:26px;height:26px;font-size:1rem;line-height:1}
 @media (max-width:360px){.brand{font-size:1.35rem}.chrono-pill{font-size:.95rem}}
+
+/* écran « C'est qui ? » façon photos de profil */
+.who-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:18px 10px;padding-top:4px}
+.who-btn{border:0;background:none;padding:0;display:flex;flex-direction:column;align-items:center;gap:8px;font-weight:600;color:var(--ink);min-width:0}
+.who-btn span{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:.95rem}
+.av.who{--s:84px;font-size:2rem;box-shadow:0 0 0 3px var(--bg),0 0 0 5px var(--accent);transition:transform .15s ease}
+.who-btn:hover .av.who,.who-btn:focus-visible .av.who{transform:scale(1.05)}
+.who-btn:active .av.who{transform:scale(.96)}
+@media (prefers-reduced-motion:reduce){.av.who{transition:none}}

@@ -278,7 +278,7 @@ function renderWelcome(){
     ${profs.length ? `<section class="list" aria-label="Profils">
       <div class="section-head"><h2>C'est qui ?</h2></div>
       <span class="hint">Touche ton prénom puis tape ton code.</span>
-      <div class="pick-row">${profs.map(p => `<button class="pick" data-act="login-pick" data-pid="${p.pid}">${avatar(p,"sm")}${esc(p.name)}</button>`).join("")}</div>
+      <div class="who-grid">${profs.map(p => `<button class="who-btn" data-act="login-pick" data-pid="${p.pid}">${avatar(p,"who")}<span>${esc(p.name)}</span></button>`).join("")}</div>
     </section>` : ""}
     <button class="btn block" data-act="signup">${plusSm} ${profs.length ? "Je n'ai pas encore de profil" : "Créer mon profil"}</button>`;
 }
