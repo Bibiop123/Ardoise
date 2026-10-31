@@ -274,7 +274,7 @@ function renderRoom(rid){
 
   document.body.classList.toggle("room-closed", !!r.closed);
   $("#app").innerHTML = `
-    <div class="top"><button class="icon-btn" data-act="home" aria-label="Retour aux groupes">${ICON.back}</button>
+    <div class="top sticky"><button class="icon-btn" data-act="home" aria-label="Retour aux groupes">${ICON.back}</button>
       <div class="grow room-title">${esc(r.name)}</div>
       <button class="icon-btn" data-act="invite" aria-label="Inviter des amis">${ICON.share}</button>
       ${r.closed ? `<button class="pill-btn" data-act="room-reopen">Rouvrir</button>` : `<button class="pill-btn" data-act="room-close-ask">🔒 Clôturer</button>`}
@@ -292,7 +292,9 @@ function renderRoom(rid){
     <div class="tabs" role="tablist">
       ${[["depenses","Dépenses"],["equilibres","Équilibres"],["membres","Membres"]].map(([k,l])=>`<button role="tab" aria-selected="${S.tab===k}" data-act="tab" data-tab="${k}">${l}</button>`).join("")}
     </div>
-    <div class="list">${body}</div>`;
+    <div class="list">${body}</div>
+    ${r.closed ? `<button class="btn ghost block" data-act="room-reopen">Rouvrir l'événement</button>`
+               : `<button class="btn ghost block close-btn" data-act="room-close-ask">🔒 Clôturer l'événement</button>`}`;
 
   let fab = $("#fab");
   if(editable && mem.length){

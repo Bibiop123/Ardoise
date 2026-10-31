@@ -166,3 +166,8 @@ input[type=text],input[type=date],input[type=number]{font:inherit;font-size:16px
 body{padding-block:calc(12px + env(safe-area-inset-top,0px)) calc(110px + env(safe-area-inset-bottom,0px))}
 .top .icon-btn{flex:none}
 #f-link{font-size:14px}
+
+.top.sticky{position:sticky;top:env(safe-area-inset-top,0px);z-index:6;background:var(--bg);margin-inline:-4px;padding:6px 4px}
+body:has(.top.sticky)::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.close-btn{margin-top:8px}
+@media (max-width:380px){.top .room-title{font-size:1.1rem}}
