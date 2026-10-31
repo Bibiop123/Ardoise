@@ -14,6 +14,7 @@ const ICON = {
   arrow:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
   share:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>'
 };
+ICON.chrono = '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 5h4M19 5v3"/><path d="M26.5 8.5l1.6-1.6"/><path d="M12.6 11.2A10 10 0 1 1 13 27"/><path d="M19 18l-3.5-5M19 18l4.5-2.5"/><circle cx="19" cy="18" r="1.2" fill="currentColor"/><path d="M3 14h6M5 18h6M2 22h7M7 26h4"/></svg>';
 const plusSm = ICON.plus.replace("<svg",'<svg width="18" height="18"');
 
 /* ---------- utilitaires ---------- */
@@ -51,6 +52,33 @@ function applySkin(id){
 }
 
 applySkin(currentSkin());
+
+/* ---------- chronomètre ---------- */
+const CH = (() => { try{ return JSON.parse(localStorage.getItem("ardoise.chrono")) || {acc:0, since:null}; }catch{ return {acc:0, since:null}; } })();
+const chSave = () => { try{ localStorage.setItem("ardoise.chrono", JSON.stringify(CH)); }catch{} };
+const chElapsed = () => CH.acc + (CH.since ? Date.now() - CH.since : 0);
+function chFormat(ms){
+  const t = Math.floor(ms/100), d = t%10, s = Math.floor(t/10)%60, m = Math.floor(t/600)%60, h = Math.floor(t/36000);
+  const p = n => String(n).padStart(2,"0");
+  return h ? `${h}:${p(m)}:${p(s)}` : `${p(m)}:${p(s)},${d}`;
+}
+let chTimer = null;
+function chTick(){
+  const el = $("#chrono-time"); if(el) el.textContent = chFormat(chElapsed());
+  const b = $("#chrono-btn"); if(b){ b.classList.toggle("running", !!CH.since); b.setAttribute("aria-label", CH.since ? "Mettre le chronomètre en pause" : "Lancer le chronomètre"); }
+}
+function chSync(){ clearInterval(chTimer); chTimer = CH.since ? setInterval(chTick, 100) : null; chTick(); }
+function chToggle(){
+  if(CH.since){ CH.acc += Date.now() - CH.since; CH.since = null; } else CH.since = Date.now();
+  chSave(); render(); chSync();
+}
+function chReset(){ CH.acc = 0; CH.since = null; chSave(); render(); chSync(); }
+const chronoHTML = () => {
+  const visible = CH.since || CH.acc > 0;
+  return `${visible ? `<div class="chrono-pill${CH.since?"":" paused"}"><span id="chrono-time" class="num">${chFormat(chElapsed())}</span>
+      ${CH.since ? "" : `<button class="chrono-reset" data-act="chrono-reset" aria-label="Remettre le chronomètre à zéro">↺</button>`}</div>` : ""}
+    <button class="icon-btn chrono-btn${CH.since?" running":""}" id="chrono-btn" data-act="chrono" aria-label="${CH.since ? "Mettre le chronomètre en pause" : "Lancer le chronomètre"}">${ICON.chrono}</button>`;
+};
 
 /* ---------- état ---------- */
 const S = {
@@ -279,7 +307,7 @@ function renderHome(){
   const me = myProfile();
 
   $("#app").innerHTML = `
-  ${brandBar(`<button class="me-btn" data-act="my-profile" aria-label="Mon profil">${avatar({...me, pid:S.myPid})}</button>`)}
+  ${brandBar(`${chronoHTML()}<button class="me-btn" data-act="my-profile" aria-label="Mon profil">${avatar({...me, pid:S.myPid})}</button>`)}
   ${S.online ? "" : `<div class="notice">Hors ligne : tes modifications seront envoyées au retour de la connexion.</div>`}
   <section class="slate" aria-label="Ton solde">
     <span class="label">${owe ? "Tu dois au total" : owed ? "On te doit au total" : `Salut ${esc(me.name)}`}</span>
@@ -749,6 +777,8 @@ document.addEventListener("click", async ev => {
       if(S.myPid) update(R(`profiles/${S.myPid}`), {skin: el.dataset.skin}).catch(()=>{});
       document.querySelectorAll(".skin-opt").forEach(b => { const on = b.dataset.skin===el.dataset.skin; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); });
       break; }
+    case "chrono": chToggle(); break;
+    case "chrono-reset": chReset(); break;
     case "claim-open": S.claimOpen = {...(S.claimOpen||{}), [rid]:true}; render(); break;
     case "logout": {
       closeSheet();
@@ -936,4 +966,5 @@ async function boot(){
   });
 }
 render();
+chSync();
 boot().catch(e => { console.error(e); S.error = "Impossible de démarrer Ardoise. Recharge la page."; render(); });
