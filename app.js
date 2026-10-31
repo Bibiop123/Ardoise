@@ -32,6 +32,21 @@ async function pinHash(pid, pin){
 }
 const PIN_RE = /^\d{4,6}$/;
 
+/* ---------- apparence ---------- */
+const SKINS = [
+  {id:"ardoise", name:"Ardoise", bg:"#1b2035", fg:"#ff8a78", font:"'Bricolage Grotesque',sans-serif", sample:"42 €"},
+  {id:"ticket", name:"Ticket", bg:"#fbf8f1", fg:"#b5342a", font:"'Courier Prime',monospace", sample:"42,50"},
+  {id:"craie", name:"Craie", bg:"#26332c", fg:"#f7c9a8", font:"Caveat,cursive", sample:"42 €"},
+  {id:"pop", name:"Pop", bg:"#ff5a7a", fg:"#ffffff", font:"Fredoka,sans-serif", sample:"42 €"},
+];
+const currentSkin = () => { try{ return localStorage.getItem("ardoise.skin") || "ardoise"; }catch{ return "ardoise"; } };
+function applySkin(id){
+  document.documentElement.dataset.skin = id;
+  try{ localStorage.setItem("ardoise.skin", id); }catch{}
+  const tc = {ardoise:"#1b2035", ticket:"#e9e4d8", craie:"#26332c", pop:"#fff6e0"}[id];
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", tc);
+}
+
 /* ---------- état ---------- */
 const S = {
   db:null, uid:null, myPid:undefined, adminPid:null, profiles:new Map(), profilesReady:false,
@@ -307,7 +322,10 @@ function renderRoom(rid){
   const total = exps.filter(e=>e.kind!=="transfer").reduce((s,e)=>s+e.amount,0);
 
   let meBlock = "";
-  if(!me){
+  if(!me && r.createdBy===S.myPid && !S.claimOpen?.[rid]){
+    meBlock = `<div class="notice organizer">Tu organises ce groupe sans y participer : tu vois et gères tout, mais tu n'as rien à payer.
+      ${editable ? `<button class="pill-btn" data-act="claim-open">Je participe aussi</button>` : ""}</div>`;
+  } else if(!me){
     const free = mem.filter(m => !m.pid);
     meBlock = `<div class="claim"><b>Qui es-tu dans ce groupe ?</b>
       ${free.length ? `<span class="hint">Touche ton prénom pour relier ce groupe à ton profil.</span>
@@ -480,6 +498,10 @@ function sheetMyProfile(){
       <div class="list" style="gap:6px">${others.map(o => `<div class="row" style="background:var(--surface)">${avatar(o,"sm")}<div class="grow"><div class="t">${esc(o.name)}</div></div>
         <button class="pill-btn" data-act="admin-reset" data-pid="${o.pid}">Nouveau code</button></div>`).join("") || `<span class="hint">Personne d'autre n'a encore de profil.</span>`}</div>
     </details>` : ""}
+    <div class="field"><label>Apparence</label>
+      <div class="skins">${SKINS.map(k => `<button class="skin-opt${currentSkin()===k.id?" on":""}" data-act="skin" data-skin="${k.id}" aria-pressed="${currentSkin()===k.id}">
+        <span class="skin-sw" style="background:${k.bg};color:${k.fg};font-family:${k.font}">${k.sample}</span><span>${k.name}</span></button>`).join("")}</div>
+      <span class="hint">Le style s'applique seulement sur cet appareil.</span></div>
     <button class="btn ghost block" data-act="logout">Me déconnecter de cet appareil</button>`);
 }
 function sheetAdminReset(pid){
@@ -492,18 +514,21 @@ function sheetAdminReset(pid){
 }
 
 /* groupes */
+const othersFold = (open=false) => `<details class="fold quiet"${open?" open":""}><summary>${plusSm} Ajouter quelqu'un qui n'a pas de profil</summary>
+      <div style="display:flex;gap:8px"><input type="text" id="f-other" maxlength="30" placeholder="Prénom" style="flex:1" aria-label="Prénom"><button class="btn ghost" data-act="room-add-other">Ajouter</button></div>
+      <div class="chips" id="f-others"></div>
+      <span class="hint">Cette personne pourra relier son profil plus tard grâce au lien d'invitation.</span></details>`;
+const friendPicker = list => `<div class="pick-row" id="f-friends">${list.map(p => `<button class="pick" data-act="pick-friend" data-pid="${p.pid}" aria-pressed="false">${avatar(p,"sm")}${esc(p.name)}${p.pid===S.myPid?" <span class='muted'>(moi)</span>":""}</button>`).join("")}</div>`;
+
 function sheetNewRoom(){
   F = {type:"room", picked:new Set(), others:[]};
-  const friends = profilesSorted().filter(p => p.pid!==S.myPid);
+  const people = [myProfile() && {...myProfile(), pid:S.myPid}, ...profilesSorted().filter(p => p.pid!==S.myPid)].filter(Boolean);
   openSheet(`<div class="sheet-head"><h2>Nouveau groupe</h2>${closeBtn}</div>
     <div class="field"><label for="f-room">Nom de l'événement</label><input type="text" id="f-room" maxlength="60" placeholder="Week-end à Annecy"></div>
-    ${friends.length ? `<div class="field"><label>Qui participe ?</label>
-      <div class="pick-row" id="f-friends">${friends.map(p => `<button class="pick" data-act="pick-friend" data-pid="${p.pid}" aria-pressed="false">${avatar(p,"sm")}${esc(p.name)}</button>`).join("")}</div>
-      <span class="hint">Tu fais automatiquement partie du groupe.</span></div>` : ""}
-    <div class="field"><label for="f-other">${friends.length ? "Quelqu'un qui n'a pas encore de profil ?" : "Les autres participants"}</label>
-      <div style="display:flex;gap:8px"><input type="text" id="f-other" maxlength="30" placeholder="Prénom" style="flex:1"><button class="btn ghost" data-act="room-add-other">Ajouter</button></div>
-      <div class="chips" id="f-others"></div>
-      <span class="hint">Ces personnes pourront relier leur profil plus tard grâce au lien d'invitation.</span></div>
+    <div class="field"><label>Qui participe ?</label>
+      ${friendPicker(people)}
+      <span class="hint">Touche chaque participant, toi compris si tu participes aux dépenses.</span>
+      ${othersFold(people.length <= 1)}</div>
     <button class="btn block" data-act="room-create">Créer le groupe</button>`);
   $("#f-other").addEventListener("keydown", e => { if(e.key==="Enter"){ e.preventDefault(); addOther(); } });
 }
@@ -514,16 +539,17 @@ async function createRoom(btn){
   const name=$("#f-room").value.trim();
   const pending=$("#f-other").value.trim(); if(pending) F.others.push(pending);
   if(!name){ toast("Donne un nom au groupe."); return; }
+  if(!F.picked.size && !F.others.length){ toast("Choisis au moins un participant."); return; }
   btn.disabled = true;
-  const rid = randomId(22), now = Date.now(), pids = [S.myPid, ...F.picked];
-  const up = { [`rooms/${rid}/info`]: {name, createdAt:now, closed:false} };
+  const rid = randomId(22), now = Date.now(), pids = [...F.picked];
+  const up = { [`rooms/${rid}/info`]: {name, createdAt:now, closed:false, createdBy:S.myPid}, [`rooms/${rid}/access/${S.myPid}`]: true, [`profiles/${S.myPid}/rooms/${rid}`]: true };
   pids.forEach((pid,k) => {
     up[`rooms/${rid}/access/${pid}`] = true;
     up[`rooms/${rid}/members/${randomId(10)}`] = {pid, name:S.profiles.get(pid)?.name||"", createdAt:now+k};
     up[`profiles/${pid}/rooms/${rid}`] = true;
   });
   F.others.forEach((o,k) => { up[`rooms/${rid}/members/${randomId(10)}`] = {name:o, createdAt:now+pids.length+k}; });
-  const needInvite = F.others.length > 0 || !F.picked.size;
+  const needInvite = F.others.length > 0;
   const ok = await write(() => update(R("/"), up), "Groupe créé");
   if(ok){ closeSheet(); watchRoom(rid); goRoom(rid); if(needInvite) setTimeout(()=>sheetInvite(rid, true), 500); }
   else btn.disabled = false;
@@ -545,11 +571,9 @@ function sheetAddMembers(rid){
   const friends = profilesSorted().filter(p => !inRoom.has(p.pid));
   F = {type:"add-members", rid, picked:new Set(), others:[], seed:"new", photo:null};
   openSheet(`<div class="sheet-head"><h2>Ajouter des participants</h2>${closeBtn}</div>
-    ${friends.length ? `<div class="field"><label>Amis avec un profil</label>
-      <div class="pick-row" id="f-friends">${friends.map(p => `<button class="pick" data-act="pick-friend" data-pid="${p.pid}" aria-pressed="false">${avatar(p,"sm")}${esc(p.name)}</button>`).join("")}</div></div>` : ""}
-    <div class="field"><label for="f-other">Quelqu'un sans profil</label>
-      <div style="display:flex;gap:8px"><input type="text" id="f-other" maxlength="30" placeholder="Prénom" style="flex:1"><button class="btn ghost" data-act="room-add-other">Ajouter</button></div>
-      <div class="chips" id="f-others"></div></div>
+    <div class="field"><label>Qui ajouter ?</label>
+      ${friends.length ? friendPicker(friends) : `<span class="hint">Tous les amis inscrits sont déjà dans le groupe.</span>`}
+      ${othersFold(!friends.length)}</div>
     <button class="btn block" data-act="add-members-ok">Ajouter au groupe</button>`);
   $("#f-other").addEventListener("keydown", e => { if(e.key==="Enter"){ e.preventDefault(); addOther(); } });
 }
@@ -707,6 +731,11 @@ document.addEventListener("click", async ev => {
       const h = await pinHash(F.pid, pin), name = S.profiles.get(F.pid)?.name;
       if(await write(() => set(R(`secrets/${F.pid}`), {pinHash:h}), `Nouveau code enregistré pour ${name}`)) closeSheet();
       break; }
+    case "skin": {
+      applySkin(el.dataset.skin);
+      document.querySelectorAll(".skin-opt").forEach(b => { const on = b.dataset.skin===el.dataset.skin; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); });
+      break; }
+    case "claim-open": S.claimOpen = {...(S.claimOpen||{}), [rid]:true}; render(); break;
     case "logout": {
       closeSheet();
       await write(() => remove(R(`devices/${S.uid}`)), "Déconnecté de cet appareil");
