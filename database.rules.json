@@ -1,0 +1,12 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "rooms": {
+      "$room": {
+        ".read": "$room.matches(/^[A-Za-z0-9]{20,40}$/)",
+        ".write": "$room.matches(/^[A-Za-z0-9]{20,40}$/)"
+      }
+    }
+  }
+}
