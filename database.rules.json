@@ -2,10 +2,55 @@
   "rules": {
     ".read": false,
     ".write": false,
+    "meta": {
+      "admin": {
+        ".read": "auth != null",
+        ".write": "auth != null && !data.exists() && newData.val() === newData.parent().parent().child('devices').child(auth.uid).child('pid').val()"
+      }
+    },
+    "devices": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        ".validate": "newData.hasChildren(['pid','proof']) && newData.child('pid').isString() && newData.child('proof').val() === newData.parent().parent().child('secrets').child(newData.child('pid').val()).child('pinHash').val()"
+      }
+    },
+    "secrets": {
+      "$pid": {
+        ".write": "auth != null && (!data.exists() || root.child('devices').child(auth.uid).child('pid').val() === $pid || (root.child('devices').child(auth.uid).child('pid').val() != null && root.child('devices').child(auth.uid).child('pid').val() === root.child('meta').child('admin').val()))",
+        ".validate": "newData.hasChildren(['pinHash']) && newData.child('pinHash').isString() && newData.child('pinHash').val().length === 64"
+      }
+    },
+    "profiles": {
+      ".read": "auth != null",
+      "$pid": {
+        ".write": "auth != null && (root.child('devices').child(auth.uid).child('pid').val() === $pid || (!data.exists() && newData.parent().parent().child('devices').child(auth.uid).child('pid').val() === $pid))",
+        "name": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 40"
+        },
+        "photo": {
+          ".validate": "newData.isString() && newData.val().beginsWith('data:image/') && newData.val().length < 200000"
+        },
+        "rooms": {
+          "$rid": {
+            ".write": "auth != null && root.child('devices').child(auth.uid).child('pid').val() != null && (root.child('rooms').child($rid).child('access').child(root.child('devices').child(auth.uid).child('pid').val()).exists() || newData.parent().parent().parent().parent().child('rooms').child($rid).child('access').child(root.child('devices').child(auth.uid).child('pid').val()).exists())"
+          }
+        }
+      }
+    },
     "rooms": {
-      "$room": {
-        ".read": "$room.matches(/^[A-Za-z0-9]{20,40}$/)",
-        ".write": "$room.matches(/^[A-Za-z0-9]{20,40}$/)"
+      "$rid": {
+        ".read": "auth != null && root.child('devices').child(auth.uid).child('pid').val() != null && data.child('access').child(root.child('devices').child(auth.uid).child('pid').val()).exists()",
+        ".write": "auth != null && root.child('devices').child(auth.uid).child('pid').val() != null && (data.child('access').child(root.child('devices').child(auth.uid).child('pid').val()).exists() || (!data.exists() && newData.child('access').child(root.child('devices').child(auth.uid).child('pid').val()).exists() && newData.child('info').exists()))",
+        "info": {
+          ".read": "auth != null && root.child('devices').child(auth.uid).child('pid').val() != null"
+        },
+        "access": {
+          "$pid": {
+            ".write": "auth != null && $pid === root.child('devices').child(auth.uid).child('pid').val()",
+            ".validate": "newData.val() === true && (root.child('rooms').child($rid).child('info').exists() || newData.parent().parent().child('info').exists())"
+          }
+        }
       }
     }
   }

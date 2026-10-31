@@ -1,5 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getDatabase, ref, onValue, set, update, remove } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import { getDatabase, ref, onValue, get, set, update, remove } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { loadFirebaseConfig } from "./config.js";
 
 const $ = s => document.querySelector(s);
@@ -15,23 +16,31 @@ const ICON = {
 };
 const plusSm = ICON.plus.replace("<svg",'<svg width="18" height="18"');
 
-/* ---------- appareil : mes groupes et qui je suis ---------- */
+/* ---------- utilitaires ---------- */
 const LS = {
   get(k,d){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; }catch{ return d; } },
-  set(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch{} }
+  del(k){ try{ localStorage.removeItem(k); }catch{} }
 };
-let myRooms = LS.get("ardoise.rooms", []);
-let myIds = LS.get("ardoise.me", {});
-const saveLocal = () => { LS.set("ardoise.rooms", myRooms); LS.set("ardoise.me", myIds); };
 const ID_RE = /^[A-Za-z0-9]{20,40}$/;
 function randomId(n=22){
   const a = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", b = new Uint8Array(n);
   crypto.getRandomValues(b); return [...b].map(x => a[x % 62]).join("");
 }
+async function pinHash(pid, pin){
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`ardoise|${pid}|${pin}`));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,"0")).join("");
+}
+const PIN_RE = /^\d{4,6}$/;
 
 /* ---------- état ---------- */
-const S = { db:null, online:true, slow:false, error:null, rooms:new Map(), loaded:new Set(), subs:{}, view:{name:"home"}, tab:"depenses" };
+const S = {
+  db:null, uid:null, myPid:undefined, adminPid:null, profiles:new Map(), profilesReady:false,
+  roomIds:[], roomIdsReady:false, rooms:new Map(), loaded:new Set(), subs:{},
+  online:true, slow:false, error:null, view:{name:"home"}, tab:"depenses", pendingJoin:null
+};
 let F = null;
+const myProfile = () => S.profiles.get(S.myPid) || null;
+const isAdmin = () => !!S.myPid && S.adminPid === S.myPid;
 
 /* ---------- calculs ---------- */
 function parseAmount(v){ const n = parseFloat(String(v).replace(/\s/g,"").replace(",", ".")); return isFinite(n) && n>0 ? Math.round(n*100) : 0; }
@@ -66,29 +75,34 @@ function settle(bal){
 }
 
 /* ---------- accès aux données ---------- */
-const membersOf = rid => S.rooms.get(rid)?.members || [];
+function withProfile(m){
+  const p = m.pid ? S.profiles.get(m.pid) : null;
+  return p ? {...m, name: p.name || m.name, photo: p.photo || null} : m;
+}
+const membersOf = rid => (S.rooms.get(rid)?.members || []).map(withProfile);
 const expensesOf = rid => S.rooms.get(rid)?.expenses || [];
 const member = (rid, mid) => membersOf(rid).find(m => m.id===mid) || {id:mid, name:"Ancien membre"};
-const meIn = rid => membersOf(rid).find(m => m.id===myIds[rid]) || null;
-const roomsSorted = () => myRooms.map(id => S.rooms.get(id)).filter(r => r && !r.missing).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+const meIn = rid => S.myPid ? membersOf(rid).find(m => m.pid===S.myPid) || null : null;
+const roomsSorted = () => S.roomIds.map(id => S.rooms.get(id)).filter(r => r && !r.missing).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
 const shareLink = rid => `${location.origin}${location.pathname}#${rid}`;
+const profilesSorted = () => [...S.profiles.values()].sort((a,b)=>(a.name||"").localeCompare(b.name||"","fr"));
 
 function hue(s){ let h=0; for(const ch of String(s)) h=(h*31+ch.charCodeAt(0))>>>0; return h%360; }
 function avatar(m, size=""){
   const ok = typeof m.photo==="string" && m.photo.startsWith("data:image/");
   const init = esc((m.name||"?").trim().slice(0,1).toUpperCase());
-  return `<span class="av ${size}" style="background:hsl(${hue(m.id+m.name)} 45% 46%)" title="${esc(m.name)}">${ok?`<img alt="" src="${m.photo}">`:init}</span>`;
+  return `<span class="av ${size}" style="background:hsl(${hue((m.pid||m.id)+m.name)} 45% 46%)" title="${esc(m.name)}">${ok?`<img alt="" src="${m.photo}">`:init}</span>`;
 }
 function chip(c){ if(c<0) return `<span class="chip owe">tu dois ${money(-c)}</span>`; if(c>0) return `<span class="chip owed">on te doit ${money(c)}</span>`; return `<span class="chip owed">✓ bravo, rien à régler</span>`; }
 const CONGRATS = ["Bravo, tu es à jour !","Comptes nickel, bien joué !","Rien à rembourser, chapeau !","Ardoise effacée, bravo !"];
 const congrats = seed => CONGRATS[hue(seed||"x") % CONGRATS.length];
 
-function toast(msg){ const t=$("#toastRoot"); t.innerHTML=`<div class="toast" role="status">${esc(msg)}</div>`; clearTimeout(toast.t); toast.t=setTimeout(()=>t.innerHTML="",2600); }
-async function write(fn, okMsg){
+function toast(msg){ const t=$("#toastRoot"); t.innerHTML=`<div class="toast" role="status">${esc(msg)}</div>`; clearTimeout(toast.t); toast.t=setTimeout(()=>t.innerHTML="",2800); }
+async function write(fn, okMsg, failMsg){
   try{ await fn(); if(okMsg) toast(okMsg); return true; }
   catch(e){
     console.error(e);
-    toast(String(e?.code||e?.message||"").includes("PERMISSION") ? "La base refuse l'enregistrement : vérifie les règles Firebase." : "Enregistrement impossible pour l'instant. Réessaie dans un moment.");
+    toast(failMsg || (String(e?.code||e?.message||"").toUpperCase().includes("PERMISSION") ? "Action refusée : tu n'as pas accès à ce groupe." : "Enregistrement impossible pour l'instant. Réessaie dans un moment."));
     return false;
   }
 }
@@ -107,19 +121,73 @@ function watchRoom(rid){
       .sort((a,b)=> (b.date||"").localeCompare(a.date||"") || (b.createdAt||0)-(a.createdAt||0));
     S.rooms.set(rid, {id:rid, ...v.info, members, expenses});
     render();
-  }, err => { console.error(err); S.loaded.add(rid); S.error = "La base Firebase refuse la lecture : vérifie les règles de la base."; render(); });
+  }, err => {
+    console.warn(err);
+    delete S.subs[rid]; S.loaded.add(rid);
+    S.rooms.set(rid, {id:rid, missing:true});
+    render();
+  });
 }
 function unwatchRoom(rid){ S.subs[rid]?.(); delete S.subs[rid]; S.rooms.delete(rid); S.loaded.delete(rid); }
-function joinRoom(rid){ if(!myRooms.includes(rid)){ myRooms.push(rid); saveLocal(); } watchRoom(rid); }
-function leaveRoom(rid){ myRooms = myRooms.filter(x => x!==rid); delete myIds[rid]; saveLocal(); unwatchRoom(rid); }
+
+let unsubMine = null, unsubProfiles = null, unsubAdmin = null;
+function startProfileWatches(){
+  unsubProfiles?.(); unsubAdmin?.();
+  unsubProfiles = onValue(R("profiles"), snap => {
+    S.profiles = new Map(Object.entries(snap.val()||{}).map(([pid,p]) => [pid, {pid, ...p}]));
+    S.profilesReady = true; render();
+  }, err => { console.error(err); S.profilesReady = true; S.error = "La base refuse la lecture des profils. Les règles de sécurité ne sont peut-être pas encore à jour."; render(); });
+  unsubAdmin = onValue(R("meta/admin"), snap => { S.adminPid = snap.val(); render(); }, () => {});
+}
+function startMyRooms(){
+  unsubMine?.();
+  if(!S.myPid){ S.roomIds = []; S.roomIdsReady = true; return; }
+  unsubMine = onValue(R(`profiles/${S.myPid}/rooms`), snap => {
+    S.roomIds = Object.keys(snap.val()||{});
+    S.roomIdsReady = true;
+    for(const id of Object.keys(S.subs)) if(!S.roomIds.includes(id) && id!==S.view.id) unwatchRoom(id);
+    S.roomIds.forEach(watchRoom);
+    render();
+  }, () => { S.roomIdsReady = true; render(); });
+}
+
+/* rejoindre un groupe (lien d'invitation, ou migration) */
+async function joinRoom(rid){
+  if(!S.myPid) return false;
+  try{
+    await update(R("/"), { [`rooms/${rid}/access/${S.myPid}`]: true, [`profiles/${S.myPid}/rooms/${rid}`]: true });
+    watchRoom(rid); return true;
+  }catch(e){ console.warn(e); return false; }
+}
+
+/* anciens groupes mémorisés sur cet appareil avant les profils */
+async function migrateLocal(){
+  const old = LS.get("ardoise.rooms", []), ids = LS.get("ardoise.me", {});
+  if(!old.length || !S.myPid) return;
+  for(const rid of old){
+    if(!ID_RE.test(rid)) continue;
+    const ok = await joinRoom(rid);
+    const mid = ids[rid];
+    if(ok && mid){
+      try{
+        const s = await get(R(`rooms/${rid}/members/${mid}`));
+        if(s.exists() && !s.val().pid) await update(R(`rooms/${rid}/members/${mid}`), {pid:S.myPid});
+      }catch{}
+    }
+  }
+  LS.del("ardoise.rooms"); LS.del("ardoise.me");
+}
 
 /* ---------- navigation ---------- */
 function route(){
   const h = decodeURIComponent(location.hash.slice(1));
   if(ID_RE.test(h)){
-    const isNew = !myRooms.includes(h);
-    joinRoom(h);
-    if(S.view.name!=="room" || S.view.id!==h){ S.view = {name:"room", id:h}; S.tab = myIds[h] ? "depenses" : "membres"; if(isNew) S.tab = "depenses"; window.scrollTo(0,0); }
+    if(!S.myPid){ S.pendingJoin = h; S.view = {name:"home"}; closeSheet(); render(); return; }
+    if(!S.roomIds.includes(h) && !S.subs[h]){
+      S.rooms.delete(h);
+      joinRoom(h).then(ok => { if(!ok){ S.rooms.set(h,{id:h, missing:true}); render(); } });
+    }
+    if(S.view.name!=="room" || S.view.id!==h){ S.view = {name:"room", id:h}; S.tab = "depenses"; window.scrollTo(0,0); }
   } else S.view = {name:"home"};
   closeSheet(); render();
 }
@@ -127,29 +195,48 @@ const goHome = () => { history.pushState("", "", location.pathname + location.se
 const goRoom = rid => { location.hash = rid; };
 
 /* ---------- vues ---------- */
+const brandBar = (right="") => `<div class="top"><div class="brand grow">Ardoise<span>.</span></div>${right}</div>`;
+function loadingHTML(msg){
+  return `${brandBar()}<div class="slate"><span class="label">Ton solde</span><div class="big zero">…</div>
+    <div class="sub">${S.slow ? "La base de données ne répond pas. Vérifie ta connexion internet." : msg}</div></div>`;
+}
 function render(){
   const app = $("#app");
-  const waiting = myRooms.some(id => !S.loaded.has(id));
-  if(S.error){ app.innerHTML = `<div class="top"><div class="brand">Ardoise<span>.</span></div></div><div class="notice err">${esc(S.error)}</div>`; $("#fab")?.remove(); return; }
+  if(S.error){ app.innerHTML = `${brandBar()}<div class="notice err">${esc(S.error)}</div>`; $("#fab")?.remove(); return; }
+  if(S.myPid===undefined || !S.profilesReady){ app.innerHTML = loadingHTML("Connexion…"); $("#fab")?.remove(); return; }
+  if(!S.myPid || !myProfile()){ renderWelcome(); return; }
   if(S.view.name==="room"){
     const r = S.rooms.get(S.view.id);
     if(!r){ app.innerHTML = loadingHTML("Ouverture du groupe…"); $("#fab")?.remove(); return; }
     if(r.missing){ renderMissing(r.id); return; }
     renderRoom(r.id); return;
   }
-  if(waiting && !roomsSorted().length){ app.innerHTML = loadingHTML("Chargement de tes groupes…"); $("#fab")?.remove(); return; }
+  if(!S.roomIdsReady || (S.roomIds.some(id => !S.loaded.has(id)) && !roomsSorted().length)){ app.innerHTML = loadingHTML("Chargement de tes groupes…"); $("#fab")?.remove(); return; }
   renderHome();
 }
-function loadingHTML(msg){
-  return `<div class="top"><div class="brand">Ardoise<span>.</span></div></div>
-    <div class="slate"><span class="label">Ton solde</span><div class="big zero">…</div>
-    <div class="sub">${S.slow ? "La base de données ne répond pas. Vérifie ta connexion internet." : msg}</div></div>`;
+
+function renderWelcome(){
+  document.body.classList.remove("room-closed"); $("#fab")?.remove();
+  const profs = profilesSorted();
+  $("#app").innerHTML = `${brandBar()}
+    <section class="slate">
+      <span class="label">Bienvenue</span>
+      <div class="big zero" style="font-size:clamp(1.8rem,8vw,2.4rem)">Les comptes entre potes, sans prise de tête.</div>
+      <div class="sub">${S.pendingJoin ? "On t'a invité dans un groupe. Connecte-toi ou crée ton profil pour le rejoindre." : "Crée ton profil une fois, retrouve tes groupes sur tous tes appareils."}</div>
+    </section>
+    ${profs.length ? `<section class="list" aria-label="Profils">
+      <div class="section-head"><h2>C'est qui ?</h2></div>
+      <span class="hint">Touche ton prénom puis tape ton code.</span>
+      <div class="pick-row">${profs.map(p => `<button class="pick" data-act="login-pick" data-pid="${p.pid}">${avatar(p,"sm")}${esc(p.name)}</button>`).join("")}</div>
+    </section>` : ""}
+    <button class="btn block" data-act="signup">${plusSm} ${profs.length ? "Je n'ai pas encore de profil" : "Créer mon profil"}</button>`;
 }
+
 function renderMissing(rid){
-  $("#fab")?.remove();
+  $("#fab")?.remove(); document.body.classList.remove("room-closed");
   $("#app").innerHTML = `<div class="top"><button class="icon-btn" data-act="home" aria-label="Retour aux groupes">${ICON.back}</button><div class="grow room-title">Groupe introuvable</div></div>
-    <div class="empty"><b>Ce groupe n'existe pas ou a été supprimé</b><span class="muted">Vérifie le lien qu'on t'a envoyé.</span>
-    <button class="btn ghost" data-act="forget" data-room="${rid}">Retirer de mes groupes</button></div>`;
+    <div class="empty"><b>Ce groupe n'existe pas, a été supprimé, ou le lien est incomplet</b><span class="muted">Demande à un participant de te renvoyer le lien d'invitation.</span>
+    ${S.roomIds.includes(rid) ? `<button class="btn ghost" data-act="forget" data-room="${rid}">Retirer de mes groupes</button>` : ""}</div>`;
 }
 
 function renderHome(){
@@ -166,13 +253,14 @@ function renderHome(){
   mine.sort((a,b)=> (a.dir===b.dir?0:a.dir==="owe"?-1:1) || b.amount-a.amount);
   const noMe = rooms.length && rooms.every(r => !meIn(r.id));
   const allGood = !owe && !owed && rooms.length && !noMe;
+  const me = myProfile();
 
   $("#app").innerHTML = `
-  <div class="top"><div class="brand grow">Ardoise<span>.</span></div></div>
+  ${brandBar(`<button class="me-btn" data-act="my-profile" aria-label="Mon profil">${avatar({...me, pid:S.myPid})}</button>`)}
   ${S.online ? "" : `<div class="notice">Hors ligne : tes modifications seront envoyées au retour de la connexion.</div>`}
   <section class="slate" aria-label="Ton solde">
-    <span class="label">${owe ? "Tu dois au total" : owed ? "On te doit au total" : "Ton solde"}</span>
-    <div class="big ${owe?"owe":owed?"owed":allGood?"owed":"zero"}">${allGood ? esc(congrats(myRooms.join(""))) : money(owe||owed)}</div>
+    <span class="label">${owe ? "Tu dois au total" : owed ? "On te doit au total" : `Salut ${esc(me.name)}`}</span>
+    <div class="big ${owe?"owe":owed?"owed":allGood?"owed":"zero"}">${allGood ? esc(congrats(S.myPid)) : (owe||owed) ? money(owe||owed) : money(0)}</div>
     <div class="sub">${owe && owed ? `Et on te doit <b class="num">${money(owed)}</b> de ton côté.` :
       noMe ? "Ouvre un groupe et indique qui tu es pour voir ton solde." :
       allGood ? "Tu ne dois rien à personne et personne ne te doit rien. Merci d'être réglo !" :
@@ -219,11 +307,13 @@ function renderRoom(rid){
   const total = exps.filter(e=>e.kind!=="transfer").reduce((s,e)=>s+e.amount,0);
 
   let meBlock = "";
-  if(!me && mem.length){
-    meBlock = `<div class="claim"><b>Qui es-tu dans ce groupe ?</b><span class="hint">Choisis ton profil pour voir ce que tu dois. Ce choix reste sur ce téléphone.</span>
-      <div class="pick-row">${mem.map(m=>`<button class="pick" data-act="claim" data-mid="${m.id}">${avatar(m,"sm")}${esc(m.name)}</button>`).join("")}</div>
-      ${editable ? `<span class="hint">Tu n'es pas dans la liste ? Ajoute-toi dans l'onglet Membres.</span>` : ""}</div>`;
-  } else if(me){
+  if(!me){
+    const free = mem.filter(m => !m.pid);
+    meBlock = `<div class="claim"><b>Qui es-tu dans ce groupe ?</b>
+      ${free.length ? `<span class="hint">Touche ton prénom pour relier ce groupe à ton profil.</span>
+      <div class="pick-row">${free.map(m=>`<button class="pick" data-act="claim" data-mid="${m.id}">${avatar(m,"sm")}${esc(m.name)}</button>`).join("")}</div>` : ""}
+      ${editable ? `<button class="btn ghost" data-act="claim-new">${plusSm} ${free.length ? "Je ne suis pas dans la liste, ajoute-moi" : "Ajoute-moi au groupe"}</button>` : ""}</div>`;
+  } else {
     meBlock = `<div class="me-card">
       <div class="me-line">${avatar(me,"lg")}<div class="grow"><span class="label">${myB<0?"Tu dois":myB>0?"On te doit":"Ton solde"}</span>
         <div class="me-amt ${myB<0?"owe":"owed"}">${myB ? money(Math.abs(myB)) : esc(congrats(rid+me.id))}</div>
@@ -263,13 +353,12 @@ function renderRoom(rid){
     body += plan.length ? plan.map(t => { const f = member(rid,t.from), to = member(rid,t.to);
       return `<div class="row settle"><div class="names">${avatar(f,"sm")}<b>${esc(f.name)}</b><span class="arrow">${ICON.arrow}</span>${avatar(to,"sm")}<b>${esc(to.name)}</b></div>
         <b class="num">${money(t.amount)}</b><button class="pill-btn" data-act="settle" data-room="${rid}" data-from="${t.from}" data-to="${t.to}" data-amount="${t.amount}">Réglé</button></div>`; }).join("")
-      : `<div class="notice" style="background:var(--owed-soft);color:var(--owed);font-weight:600">🎉 Bravo à tous, tout le monde est à jour !
-          ${editable && exps.length ? `<div style="margin-top:10px"><button class="btn" data-act="room-close-ask">Clôturer le groupe</button></div>` : ""}</div>`;
+      : `<div class="notice" style="background:var(--owed-soft);color:var(--owed);font-weight:600">🎉 Bravo à tous, tout le monde est à jour !</div>`;
     body += `<p class="hint" style="margin:0 4px">Le nombre de remboursements est réduit au minimum. « Réglé » enregistre le paiement dans les dépenses.</p>`;
   } else {
     body = mem.map(m => `<button class="row" data-act="edit-member" data-mid="${m.id}">${avatar(m)}<div class="grow"><div class="t">${esc(m.name)}</div>
-      <div class="s">${m.id===me?.id ? "C'est toi" : "&nbsp;"}</div></div><span class="muted" style="font-size:.85rem">Modifier</span></button>`).join("")
-      + (editable ? `<button class="btn ghost block" data-act="add-member">${plusSm} Ajouter une personne</button>` : "");
+      <div class="s">${m.id===me?.id ? "C'est toi" : m.pid ? "A un profil Ardoise" : "Pas encore de profil"}</div></div><span class="muted" style="font-size:.85rem">${m.pid && m.pid!==S.myPid ? "Voir" : "Modifier"}</span></button>`).join("")
+      + (editable ? `<button class="btn ghost block" data-act="add-member">${plusSm} Ajouter des participants</button>` : "");
   }
 
   document.body.classList.toggle("room-closed", !!r.closed);
@@ -312,63 +401,198 @@ function dayLabel(iso){
 /* ---------- fenêtres ---------- */
 function openSheet(html){
   $("#sheetRoot").innerHTML = `<div class="scrim" data-act="close-scrim"><div class="sheet" role="dialog" aria-modal="true"><div class="grab"></div>${html}</div></div>`;
-  setTimeout(()=>$(".sheet input[type=text]")?.focus({preventScroll:true}), 60);
+  setTimeout(()=>$(".sheet input")?.focus({preventScroll:true}), 60);
 }
 function closeSheet(){ $("#sheetRoot").innerHTML=""; F=null; }
+const closeBtn = `<button class="pill-btn" data-act="close">Fermer</button>`;
+const pinField = (id, label, hint="") => `<div class="field"><label for="${id}">${label}</label>
+  <input type="password" inputmode="numeric" autocomplete="off" maxlength="6" id="${id}" class="pin-input" placeholder="••••">${hint?`<span class="hint">${hint}</span>`:""}</div>`;
+const photoBlock = (seed, name, photo) => `<div class="photo-pick"><span id="f-av">${avatar({id:seed, name:name||"?", photo},"xl")}</span>
+  <div class="inline-actions"><button class="btn ghost" data-act="pick-photo">${photo?"Changer la photo":"Ajouter une photo"}</button>
+  ${photo?`<button class="btn ghost" data-act="rm-photo">Retirer</button>`:""}</div></div>`;
+function refreshPhoto(){ $("#f-av").innerHTML = avatar({id:F.seed||"new", name:$("#f-name")?.value||F.name||"?", photo:F.photo},"xl"); }
 
+/* inscription */
+function sheetSignup(){
+  F = {type:"signup", seed:"new", photo:null};
+  openSheet(`<div class="sheet-head"><h2>Créer mon profil</h2>${closeBtn}</div>
+    ${photoBlock("new","",null)}
+    <div class="field"><label for="f-name">Prénom ou surnom</label><input type="text" id="f-name" maxlength="30" placeholder="Ton prénom"></div>
+    <span class="hint">Une photo aide tes amis à te reconnaître, surtout s'il y a plusieurs personnes avec le même prénom.</span>
+    ${pinField("f-pin","Choisis un code (4 à 6 chiffres)","Il sert à te connecter sur un autre téléphone ou ordinateur.")}
+    ${pinField("f-pin2","Confirme ton code")}
+    <button class="btn block" data-act="signup-ok">Créer mon profil</button>`);
+}
+async function doSignup(btn){
+  const name = $("#f-name").value.trim(), pin = $("#f-pin").value, pin2 = $("#f-pin2").value;
+  if(!name){ toast("Indique ton prénom."); return; }
+  if(profilesSorted().some(p => (p.name||"").toLowerCase()===name.toLowerCase()) && !F.dupOk){
+    F.dupOk = true; toast(`Il y a déjà un « ${name} ». Ajoute une initiale ou une photo, ou touche à nouveau pour confirmer.`); return;
+  }
+  if(!PIN_RE.test(pin)){ toast("Le code doit faire 4 à 6 chiffres."); return; }
+  if(pin!==pin2){ toast("Les deux codes ne sont pas identiques."); return; }
+  btn.disabled = true;
+  const pid = randomId(16), h = await pinHash(pid, pin);
+  const up = {
+    [`profiles/${pid}`]: {name, photo:F.photo||null, createdAt:Date.now()},
+    [`secrets/${pid}`]: {pinHash:h},
+    [`devices/${S.uid}`]: {pid, proof:h},
+  };
+  if(!S.adminPid) up["meta/admin"] = pid;
+  const ok = await write(() => update(R("/"), up), `Bienvenue ${name} !`);
+  if(!ok) btn.disabled = false;
+}
+
+/* connexion */
+function sheetLogin(pid){
+  const p = S.profiles.get(pid); if(!p) return;
+  F = {type:"login", pid, tries:0};
+  openSheet(`<div class="sheet-head"><h2>Bonjour ${esc(p.name)}</h2>${closeBtn}</div>
+    <div class="photo-pick">${avatar(p,"xl")}<span class="hint">Tape ton code pour te connecter sur cet appareil.</span></div>
+    ${pinField("f-pin","Ton code")}
+    <button class="btn block" data-act="login-ok">Me connecter</button>
+    <span class="hint">Code oublié ? Demande à l'administrateur d'Ardoise de t'en donner un nouveau.</span>`);
+  $("#f-pin").addEventListener("keydown", e => { if(e.key==="Enter") $("[data-act=login-ok]")?.click(); });
+}
+async function doLogin(btn){
+  const pin = $("#f-pin").value;
+  if(!PIN_RE.test(pin)){ toast("Le code fait 4 à 6 chiffres."); return; }
+  btn.disabled = true;
+  const h = await pinHash(F.pid, pin);
+  try{ await set(R(`devices/${S.uid}`), {pid:F.pid, proof:h}); toast(`Content de te revoir ${S.profiles.get(F.pid)?.name||""} !`); }
+  catch{ btn.disabled = false; $("#f-pin").value = ""; $("#f-pin").focus(); toast("Code incorrect."); }
+}
+
+/* mon profil */
+function sheetMyProfile(){
+  const p = myProfile();
+  F = {type:"me", seed:S.myPid, name:p.name, photo:p.photo||null};
+  const others = profilesSorted().filter(x => x.pid!==S.myPid);
+  openSheet(`<div class="sheet-head"><h2>Mon profil</h2>${closeBtn}</div>
+    ${photoBlock(S.myPid, p.name, F.photo)}
+    <div class="field"><label for="f-name">Prénom ou surnom</label><input type="text" id="f-name" maxlength="30" value="${esc(p.name)}"></div>
+    <button class="btn block" data-act="me-save">Enregistrer</button>
+    <details class="fold"><summary>Changer mon code</summary>
+      ${pinField("f-pin","Nouveau code (4 à 6 chiffres)")}${pinField("f-pin2","Confirme le nouveau code")}
+      <button class="btn ghost block" data-act="me-pin">Changer mon code</button></details>
+    ${isAdmin() ? `<details class="fold"><summary>Administration · ${others.length} ami${others.length>1?"s":""}</summary>
+      <span class="hint">Tu es l'administrateur. Si un ami a oublié son code, donne-lui-en un nouveau ici.</span>
+      <div class="list" style="gap:6px">${others.map(o => `<div class="row" style="background:var(--surface)">${avatar(o,"sm")}<div class="grow"><div class="t">${esc(o.name)}</div></div>
+        <button class="pill-btn" data-act="admin-reset" data-pid="${o.pid}">Nouveau code</button></div>`).join("") || `<span class="hint">Personne d'autre n'a encore de profil.</span>`}</div>
+    </details>` : ""}
+    <button class="btn ghost block" data-act="logout">Me déconnecter de cet appareil</button>`);
+}
+function sheetAdminReset(pid){
+  const p = S.profiles.get(pid); if(!p) return;
+  F = {type:"reset", pid};
+  openSheet(`<div class="sheet-head"><h2>Nouveau code pour ${esc(p.name)}</h2>${closeBtn}</div>
+    <div class="photo-pick">${avatar(p,"lg")}<span class="hint">Choisis un code et communique-le à ${esc(p.name)}. Il pourra le changer ensuite dans son profil.</span></div>
+    <div class="field"><label for="f-newpin">Nouveau code (4 à 6 chiffres)</label><input type="text" inputmode="numeric" maxlength="6" id="f-newpin" class="pin-input" autocomplete="off"></div>
+    <div class="two"><button class="btn ghost" data-act="close">Annuler</button><button class="btn" data-act="admin-reset-ok">Valider</button></div>`);
+}
+
+/* groupes */
 function sheetNewRoom(){
-  F = {type:"room", others:[]};
-  openSheet(`<div class="sheet-head"><h2>Nouveau groupe</h2><button class="pill-btn" data-act="close">Fermer</button></div>
+  F = {type:"room", picked:new Set(), others:[]};
+  const friends = profilesSorted().filter(p => p.pid!==S.myPid);
+  openSheet(`<div class="sheet-head"><h2>Nouveau groupe</h2>${closeBtn}</div>
     <div class="field"><label for="f-room">Nom de l'événement</label><input type="text" id="f-room" maxlength="60" placeholder="Week-end à Annecy"></div>
-    <div class="field"><label for="f-me">Ton prénom</label><input type="text" id="f-me" maxlength="40" placeholder="Ton prénom"></div>
-    <div class="field"><label for="f-other">Les autres participants</label>
-      <div style="display:flex;gap:8px"><input type="text" id="f-other" maxlength="40" placeholder="Prénom" style="flex:1"><button class="btn ghost" data-act="room-add-other">Ajouter</button></div>
+    ${friends.length ? `<div class="field"><label>Qui participe ?</label>
+      <div class="pick-row" id="f-friends">${friends.map(p => `<button class="pick" data-act="pick-friend" data-pid="${p.pid}" aria-pressed="false">${avatar(p,"sm")}${esc(p.name)}</button>`).join("")}</div>
+      <span class="hint">Tu fais automatiquement partie du groupe.</span></div>` : ""}
+    <div class="field"><label for="f-other">${friends.length ? "Quelqu'un qui n'a pas encore de profil ?" : "Les autres participants"}</label>
+      <div style="display:flex;gap:8px"><input type="text" id="f-other" maxlength="30" placeholder="Prénom" style="flex:1"><button class="btn ghost" data-act="room-add-other">Ajouter</button></div>
       <div class="chips" id="f-others"></div>
-      <span class="hint">Tu pourras ajouter des photos et d'autres personnes ensuite, puis envoyer le lien du groupe à tes amis.</span></div>
+      <span class="hint">Ces personnes pourront relier leur profil plus tard grâce au lien d'invitation.</span></div>
     <button class="btn block" data-act="room-create">Créer le groupe</button>`);
   $("#f-other").addEventListener("keydown", e => { if(e.key==="Enter"){ e.preventDefault(); addOther(); } });
 }
 function addOther(){ const i=$("#f-other"); const v=i.value.trim(); if(!v) return; F.others.push(v); i.value=""; i.focus(); drawOthers(); }
 function drawOthers(){ $("#f-others").innerHTML = F.others.map((n,i)=>`<span class="tag">${esc(n)}<button data-act="room-rm-other" data-i="${i}" aria-label="Retirer ${esc(n)}">×</button></span>`).join(""); }
 
-async function createRoom(){
-  const name=$("#f-room").value.trim(), meName=$("#f-me").value.trim();
+async function createRoom(btn){
+  const name=$("#f-room").value.trim();
   const pending=$("#f-other").value.trim(); if(pending) F.others.push(pending);
   if(!name){ toast("Donne un nom au groupe."); return; }
-  if(!meName){ toast("Indique ton prénom."); return; }
-  const btn = $("[data-act=room-create]"); btn.disabled = true;
-  const rid = randomId(22), now = Date.now(), members = {}, meId = randomId(10);
-  members[meId] = {name:meName, createdAt:now};
-  F.others.forEach((o,k) => { members[randomId(10)] = {name:o, createdAt:now+k+1}; });
-  const ok = await write(() => set(R(`rooms/${rid}`), {info:{name, createdAt:now, closed:false}, members}), "Groupe créé");
-  if(ok){ myIds[rid] = meId; joinRoom(rid); closeSheet(); goRoom(rid); setTimeout(()=>sheetInvite(rid, true), 300); }
+  btn.disabled = true;
+  const rid = randomId(22), now = Date.now(), pids = [S.myPid, ...F.picked];
+  const up = { [`rooms/${rid}/info`]: {name, createdAt:now, closed:false} };
+  pids.forEach((pid,k) => {
+    up[`rooms/${rid}/access/${pid}`] = true;
+    up[`rooms/${rid}/members/${randomId(10)}`] = {pid, name:S.profiles.get(pid)?.name||"", createdAt:now+k};
+    up[`profiles/${pid}/rooms/${rid}`] = true;
+  });
+  F.others.forEach((o,k) => { up[`rooms/${rid}/members/${randomId(10)}`] = {name:o, createdAt:now+pids.length+k}; });
+  const needInvite = F.others.length > 0 || !F.picked.size;
+  const ok = await write(() => update(R("/"), up), "Groupe créé");
+  if(ok){ closeSheet(); watchRoom(rid); goRoom(rid); if(needInvite) setTimeout(()=>sheetInvite(rid, true), 500); }
   else btn.disabled = false;
 }
 
 function sheetInvite(rid, fresh){
   const link = shareLink(rid), r = S.rooms.get(rid);
-  F = {type:"invite", rid};
-  openSheet(`<div class="sheet-head"><h2>${fresh ? "Groupe créé, invite tes amis" : "Inviter des amis"}</h2><button class="pill-btn" data-act="close">Fermer</button></div>
-    <p class="hint" style="margin:0">Envoie ce lien sur WhatsApp, Messenger ou par SMS. Toute personne qui a le lien peut voir et modifier le groupe, alors partage-le seulement avec les participants.</p>
+  F = {type:"invite", rid, title: r?.name || "Ardoise"};
+  openSheet(`<div class="sheet-head"><h2>${fresh ? "Groupe créé, invite tes amis" : "Inviter des amis"}</h2>${closeBtn}</div>
+    <p class="hint" style="margin:0">Les amis qui ont un profil Ardoise et que tu as ajoutés voient déjà le groupe. Pour les autres, envoie ce lien sur WhatsApp, Messenger ou par SMS : ils créeront leur profil puis rejoindront le groupe.</p>
     <div class="field"><label for="f-link">Lien du groupe</label><input type="text" id="f-link" readonly value="${esc(link)}"></div>
     <div class="two"><button class="btn ghost" data-act="copy-link">Copier le lien</button>
       ${navigator.share ? `<button class="btn" data-act="native-share">Partager…</button>` : `<button class="btn" data-act="close">OK</button>`}</div>`);
-  F.title = r?.name || "Ardoise";
+}
+
+/* participants */
+function sheetAddMembers(rid){
+  const inRoom = new Set(membersOf(rid).map(m=>m.pid).filter(Boolean));
+  const friends = profilesSorted().filter(p => !inRoom.has(p.pid));
+  F = {type:"add-members", rid, picked:new Set(), others:[], seed:"new", photo:null};
+  openSheet(`<div class="sheet-head"><h2>Ajouter des participants</h2>${closeBtn}</div>
+    ${friends.length ? `<div class="field"><label>Amis avec un profil</label>
+      <div class="pick-row" id="f-friends">${friends.map(p => `<button class="pick" data-act="pick-friend" data-pid="${p.pid}" aria-pressed="false">${avatar(p,"sm")}${esc(p.name)}</button>`).join("")}</div></div>` : ""}
+    <div class="field"><label for="f-other">Quelqu'un sans profil</label>
+      <div style="display:flex;gap:8px"><input type="text" id="f-other" maxlength="30" placeholder="Prénom" style="flex:1"><button class="btn ghost" data-act="room-add-other">Ajouter</button></div>
+      <div class="chips" id="f-others"></div></div>
+    <button class="btn block" data-act="add-members-ok">Ajouter au groupe</button>`);
+  $("#f-other").addEventListener("keydown", e => { if(e.key==="Enter"){ e.preventDefault(); addOther(); } });
+}
+async function addMembers(btn){
+  const pending=$("#f-other").value.trim(); if(pending) F.others.push(pending);
+  if(!F.picked.size && !F.others.length){ toast("Choisis au moins une personne."); return; }
+  btn.disabled = true;
+  const {rid} = F, now = Date.now(), up = {};
+  [...F.picked].forEach((pid,k) => {
+    up[`rooms/${rid}/access/${pid}`] = true;
+    up[`rooms/${rid}/members/${randomId(10)}`] = {pid, name:S.profiles.get(pid)?.name||"", createdAt:now+k};
+    up[`profiles/${pid}/rooms/${rid}`] = true;
+  });
+  F.others.forEach((o,k) => { up[`rooms/${rid}/members/${randomId(10)}`] = {name:o, createdAt:now+100+k}; });
+  if(await write(() => update(R("/"), up), "Participants ajoutés")) closeSheet(); else btn.disabled = false;
 }
 
 function sheetMember(rid, mid){
-  const m = mid ? member(rid, mid) : null, me = meIn(rid);
-  F = {type:"member", rid, mid, photo: m?.photo || null, confirmDel:false};
-  const used = mid && expensesOf(rid).some(e => e.paidBy===mid || (e.split && e.split[mid]>0));
-  openSheet(`<div class="sheet-head"><h2>${m ? "Modifier le profil" : "Ajouter une personne"}</h2><button class="pill-btn" data-act="close">Fermer</button></div>
-    <div class="photo-pick"><span id="f-av">${avatar({id:mid||"new", name:m?.name||"?", photo:F.photo},"xl")}</span>
-      <div class="inline-actions"><button class="btn ghost" data-act="pick-photo">${F.photo?"Changer la photo":"Ajouter une photo"}</button>
-      ${F.photo?`<button class="btn ghost" data-act="rm-photo">Retirer</button>`:""}</div></div>
-    <div class="field"><label for="f-name">Prénom ou surnom</label><input type="text" id="f-name" maxlength="40" value="${esc(m?.name||"")}" placeholder="Prénom"></div>
-    ${m ? (m.id===me?.id ? `<button class="btn ghost block" data-act="unclaim">Ce n'est pas moi</button>` : `<button class="btn ghost block" data-act="claim-here">C'est moi</button>`) : ""}
-    <button class="btn block" data-act="member-save">${m ? "Enregistrer" : "Ajouter"}</button>
-    ${m ? (used ? `<p class="hint" style="margin:0">Cette personne apparaît dans des dépenses : retire-la d'abord de ces dépenses pour pouvoir la supprimer.</p>`
-      : `<button class="btn danger block" data-act="member-del">Supprimer ${esc(m.name)}</button>`) : ""}`);
+  const m = member(rid, mid), me = meIn(rid);
+  const used = expensesOf(rid).some(e => e.paidBy===mid || (e.split && e.split[mid]>0));
+  if(m.pid){
+    const mine = m.pid===S.myPid;
+    F = {type:"member-view", rid, mid};
+    openSheet(`<div class="sheet-head"><h2>${esc(m.name)}</h2>${closeBtn}</div>
+      <div class="photo-pick">${avatar(m,"xl")}<span class="hint">${mine ? "C'est toi. Ton prénom et ta photo se modifient dans ton profil, et changent dans tous tes groupes." : `${esc(m.name)} a un profil Ardoise. Son prénom et sa photo sont gérés depuis son profil.`}</span></div>
+      ${mine ? `<button class="btn ghost block" data-act="my-profile">Modifier mon profil</button>` : ""}
+      ${mine ? `<button class="btn ghost block" data-act="unclaim">Ce n'est pas moi</button>` : ""}
+      ${used ? `<p class="hint" style="margin:0">Cette personne apparaît dans des dépenses : retire-la d'abord de ces dépenses pour pouvoir la retirer du groupe.</p>`
+        : `<button class="btn danger block" data-act="member-del">Retirer ${esc(m.name)} du groupe</button>`}`);
+    return;
+  }
+  F = {type:"member", rid, mid, seed:mid, photo: m.photo || null, confirmDel:false};
+  const linkable = profilesSorted().filter(p => !membersOf(rid).some(x => x.pid===p.pid));
+  openSheet(`<div class="sheet-head"><h2>Modifier</h2>${closeBtn}</div>
+    ${photoBlock(mid, m.name, F.photo)}
+    <div class="field"><label for="f-name">Prénom ou surnom</label><input type="text" id="f-name" maxlength="30" value="${esc(m.name)}"></div>
+    ${!me ? `<button class="btn ghost block" data-act="claim-here">C'est moi</button>` : ""}
+    ${linkable.length ? `<div class="field"><label>Relier au profil d'un ami</label>
+      <div class="pick-row">${linkable.map(p => `<button class="pick" data-act="link-profile" data-pid="${p.pid}">${avatar(p,"sm")}${esc(p.name)}</button>`).join("")}</div>
+      <span class="hint">Le groupe apparaîtra alors dans ses groupes, avec sa photo.</span></div>` : ""}
+    <button class="btn block" data-act="member-save">Enregistrer</button>
+    ${used ? `<p class="hint" style="margin:0">Cette personne apparaît dans des dépenses : retire-la d'abord de ces dépenses pour pouvoir la supprimer.</p>`
+      : `<button class="btn danger block" data-act="member-del">Supprimer ${esc(m.name)}</button>`}`);
 }
 
 async function fileToAvatar(file){
@@ -382,23 +606,21 @@ async function fileToAvatar(file){
   } finally { URL.revokeObjectURL(url); }
 }
 
-async function saveMember(){
-  const name=$("#f-name").value.trim(); if(!name){ toast("Indique un prénom."); return; }
-  const {rid, mid, photo} = F;
-  const ok = await write(() => mid
-    ? update(R(`rooms/${rid}/members/${mid}`), {name, photo: photo||null})
-    : set(R(`rooms/${rid}/members/${randomId(10)}`), {name, photo:photo||null, createdAt:Date.now()}),
-    mid ? "Profil enregistré" : `${name} ajouté·e`);
-  if(ok) closeSheet();
+async function linkMember(rid, mid, pid, msg){
+  return write(() => update(R("/"), {
+    [`rooms/${rid}/members/${mid}/pid`]: pid,
+    [`rooms/${rid}/access/${pid}`]: true,
+    [`profiles/${pid}/rooms/${rid}`]: true,
+  }), msg);
 }
-function claim(rid, mid){ myIds[rid] = mid; saveLocal(); S.tab = "depenses"; render(); toast(`Bonjour ${member(rid, mid).name} !`); }
 
+/* dépenses */
 function sheetExpense(rid, eid){
   const e = eid ? expensesOf(rid).find(x=>x.id===eid) : null, me = meIn(rid), mem = membersOf(rid);
   const split = {}; for(const m of mem) split[m.id] = e ? (e.split?.[m.id]||0) : 1;
   F = {type:"expense", rid, eid, kind:e?.kind||"expense", paidBy: e?.paidBy || me?.id || mem[0]?.id, split, confirmDel:false, createdAt:e?.createdAt};
   const isT = F.kind==="transfer";
-  openSheet(`<div class="sheet-head"><h2>${isT ? "Remboursement" : e ? "Modifier la dépense" : "Nouvelle dépense"}</h2><button class="pill-btn" data-act="close">Fermer</button></div>
+  openSheet(`<div class="sheet-head"><h2>${isT ? "Remboursement" : e ? "Modifier la dépense" : "Nouvelle dépense"}</h2>${closeBtn}</div>
     ${isT ? "" : `<div class="field"><label for="f-title">Quoi ?</label><input type="text" id="f-title" maxlength="60" value="${esc(e?.title||"")}" placeholder="Courses, essence, resto…"></div>`}
     <div class="two">
       <div class="field"><label for="f-amount">Montant (€)</label><input type="text" inputmode="decimal" id="f-amount" class="amount-input" value="${e?String(e.amount/100).replace(".",","):""}" placeholder="0,00"></div>
@@ -442,11 +664,11 @@ async function saveExpense(){
 
 function sheetRoomSettings(rid){
   const r = S.rooms.get(rid); F = {type:"room-settings", rid, confirmDel:false};
-  openSheet(`<div class="sheet-head"><h2>Réglages du groupe</h2><button class="pill-btn" data-act="close">Fermer</button></div>
+  openSheet(`<div class="sheet-head"><h2>Réglages du groupe</h2>${closeBtn}</div>
     <div class="field"><label for="f-rname">Nom du groupe</label><input type="text" id="f-rname" maxlength="60" value="${esc(r.name)}"></div>
     <button class="btn block" data-act="room-rename">Enregistrer</button>
-    <button class="btn ghost block" data-act="room-leave">Retirer de mes groupes</button>
-    <span class="hint">Le groupe disparaît seulement de ton téléphone. Tu pourras le retrouver avec son lien.</span>
+    <button class="btn ghost block" data-act="room-leave">Quitter le groupe</button>
+    <span class="hint">Le groupe disparaît de tes groupes. Tu pourras le retrouver avec son lien d'invitation.</span>
     <button class="btn danger block" data-act="room-del">Supprimer le groupe pour tout le monde</button>
     <span class="hint">La suppression efface toutes les dépenses du groupe pour tous les participants.</span>`);
 }
@@ -461,10 +683,44 @@ document.addEventListener("click", async ev => {
     case "home": goHome(); break;
     case "open": goRoom(el.dataset.room); break;
     case "tab": S.tab=el.dataset.tab; render(); break;
+
+    case "signup": sheetSignup(); break;
+    case "signup-ok": doSignup(el); break;
+    case "login-pick": sheetLogin(el.dataset.pid); break;
+    case "login-ok": doLogin(el); break;
+    case "my-profile": sheetMyProfile(); break;
+    case "me-save": {
+      const name = $("#f-name").value.trim(); if(!name){ toast("Indique ton prénom."); break; }
+      if(await write(() => update(R(`profiles/${S.myPid}`), {name, photo:F.photo||null}), "Profil enregistré")) closeSheet();
+      break; }
+    case "me-pin": {
+      const pin=$("#f-pin").value, pin2=$("#f-pin2").value;
+      if(!PIN_RE.test(pin)){ toast("Le code doit faire 4 à 6 chiffres."); break; }
+      if(pin!==pin2){ toast("Les deux codes ne sont pas identiques."); break; }
+      const h = await pinHash(S.myPid, pin);
+      if(await write(() => update(R("/"), {[`secrets/${S.myPid}`]:{pinHash:h}, [`devices/${S.uid}`]:{pid:S.myPid, proof:h}}), "Code changé")) closeSheet();
+      break; }
+    case "admin-reset": sheetAdminReset(el.dataset.pid); break;
+    case "admin-reset-ok": {
+      const pin = $("#f-newpin").value.trim();
+      if(!PIN_RE.test(pin)){ toast("Le code doit faire 4 à 6 chiffres."); break; }
+      const h = await pinHash(F.pid, pin), name = S.profiles.get(F.pid)?.name;
+      if(await write(() => set(R(`secrets/${F.pid}`), {pinHash:h}), `Nouveau code enregistré pour ${name}`)) closeSheet();
+      break; }
+    case "logout": {
+      closeSheet();
+      await write(() => remove(R(`devices/${S.uid}`)), "Déconnecté de cet appareil");
+      break; }
+
     case "new-room": sheetNewRoom(); break;
+    case "pick-friend": {
+      const pid = el.dataset.pid, on = !F.picked.has(pid);
+      on ? F.picked.add(pid) : F.picked.delete(pid);
+      el.classList.toggle("on", on); el.setAttribute("aria-pressed", on);
+      break; }
     case "room-add-other": addOther(); break;
     case "room-rm-other": F.others.splice(+el.dataset.i,1); drawOthers(); break;
-    case "room-create": createRoom(); break;
+    case "room-create": createRoom(el); break;
     case "invite": sheetInvite(rid, false); break;
     case "copy-link": {
       const i = $("#f-link");
@@ -474,19 +730,46 @@ document.addEventListener("click", async ev => {
     case "native-share":
       try{ await navigator.share({title:`Ardoise · ${F.title}`, text:`Rejoins le groupe « ${F.title} » sur Ardoise pour partager les dépenses :`, url:$("#f-link").value}); }catch{}
       break;
-    case "forget": leaveRoom(el.dataset.room); goHome(); break;
-    case "claim": claim(rid, el.dataset.mid); break;
-    case "add-member": sheetMember(rid, null); break;
+    case "forget": {
+      const r = el.dataset.room;
+      await write(() => remove(R(`profiles/${S.myPid}/rooms/${r}`)));
+      unwatchRoom(r); goHome(); break; }
+
+    case "claim": await linkMember(rid, el.dataset.mid, S.myPid, `Bonjour ${myProfile()?.name||""} !`); break;
+    case "claim-new": {
+      const mid = randomId(10);
+      await write(() => update(R("/"), {
+        [`rooms/${rid}/members/${mid}`]: {pid:S.myPid, name:myProfile()?.name||"", createdAt:Date.now()},
+        [`rooms/${rid}/access/${S.myPid}`]: true, [`profiles/${S.myPid}/rooms/${rid}`]: true,
+      }), "Tu fais partie du groupe");
+      break; }
+    case "claim-here": { const {rid:r, mid} = F; closeSheet(); await linkMember(r, mid, S.myPid, `Bonjour ${myProfile()?.name||""} !`); break; }
+    case "link-profile": {
+      const {rid:r, mid} = F, pid = el.dataset.pid;
+      if(await linkMember(r, mid, pid, `Relié au profil de ${S.profiles.get(pid)?.name||""}`)) closeSheet();
+      break; }
+    case "unclaim": {
+      const {rid:r, mid} = F; closeSheet();
+      await write(() => update(R(`rooms/${r}/members/${mid}`), {pid:null, name:myProfile()?.name||""}), "C'est noté");
+      break; }
+    case "add-member": sheetAddMembers(rid); break;
+    case "add-members-ok": addMembers(el); break;
     case "edit-member": sheetMember(rid, el.dataset.mid); break;
     case "pick-photo": $("#photoInput").click(); break;
-    case "rm-photo": F.photo=null; $("#f-av").innerHTML = avatar({id:F.mid||"new", name:$("#f-name").value||"?"},"xl"); el.remove(); break;
-    case "member-save": saveMember(); break;
-    case "claim-here": { const {rid:r, mid} = F; closeSheet(); claim(r, mid); break; }
-    case "unclaim": { delete myIds[F.rid]; saveLocal(); closeSheet(); render(); break; }
+    case "rm-photo": F.photo=null; refreshPhoto(); el.remove(); break;
+    case "member-save": {
+      const name=$("#f-name").value.trim(); if(!name){ toast("Indique un prénom."); break; }
+      const {rid:r, mid, photo} = F;
+      if(await write(() => update(R(`rooms/${r}/members/${mid}`), {name, photo: photo||null}), "Enregistré")) closeSheet();
+      break; }
     case "member-del":
-      if(!F.confirmDel){ F.confirmDel=true; el.textContent="Confirmer la suppression"; break; }
-      { const {rid:r, mid} = F; if(await write(()=>remove(R(`rooms/${r}/members/${mid}`)), "Personne supprimée")){ if(myIds[r]===mid){ delete myIds[r]; saveLocal(); } closeSheet(); } }
+      if(!F.confirmDel){ F.confirmDel=true; el.textContent="Confirmer"; break; }
+      { const {rid:r, mid} = F, m = member(r, mid);
+        const up = {[`rooms/${r}/members/${mid}`]: null};
+        if(m.pid){ up[`rooms/${r}/access/${m.pid}`] = null; up[`profiles/${m.pid}/rooms/${r}`] = null; }
+        if(await write(()=>update(R("/"), up), "Personne retirée")) closeSheet(); }
       break;
+
     case "add-exp": sheetExpense(rid, null); break;
     case "edit-exp": if(!S.rooms.get(rid)?.closed) sheetExpense(rid, el.dataset.eid); break;
     case "payer": F.paidBy=el.dataset.mid; drawPayer(); break;
@@ -527,18 +810,27 @@ document.addEventListener("click", async ev => {
     case "room-reopen": await write(()=>update(R(`rooms/${rid}/info`),{closed:false}), "Groupe rouvert"); break;
     case "room-settings": sheetRoomSettings(rid); break;
     case "room-rename": { const n=$("#f-rname").value.trim(); if(!n){ toast("Donne un nom au groupe."); break; } if(await write(()=>update(R(`rooms/${F.rid}/info`),{name:n}), "Nom enregistré")) closeSheet(); break; }
-    case "room-leave": { const r=F.rid; closeSheet(); leaveRoom(r); goHome(); toast("Groupe retiré de ton téléphone"); break; }
+    case "room-leave": {
+      const r=F.rid, me = meIn(r); closeSheet();
+      const up = {[`profiles/${S.myPid}/rooms/${r}`]: null};
+      if(me) up[`rooms/${r}/members/${me.id}/pid`] = null;
+      up[`rooms/${r}/access/${S.myPid}`] = null;
+      if(await write(() => update(R("/"), up), "Tu as quitté le groupe")){ unwatchRoom(r); goHome(); }
+      break; }
     case "room-del":
       if(!F.confirmDel){ F.confirmDel=true; el.textContent="Confirmer : tout supprimer"; break; }
       { const r=F.rid; el.disabled=true;
-        if(await write(()=>remove(R(`rooms/${r}`)), "Groupe supprimé")){ closeSheet(); leaveRoom(r); goHome(); } }
+        const pids = Object.keys((await get(R(`rooms/${r}/access`)).catch(()=>null))?.val?.() || {});
+        const up = {[`rooms/${r}`]: null}; pids.forEach(pid => { up[`profiles/${pid}/rooms/${r}`] = null; });
+        if(await write(()=>update(R("/"), up), "Groupe supprimé")){ closeSheet(); unwatchRoom(r); goHome(); } }
       break;
   }
 });
 
 $("#photoInput").addEventListener("change", async e => {
-  const f = e.target.files?.[0]; e.target.value = ""; if(!f || !F || F.type!=="member") return;
-  try{ F.photo = await fileToAvatar(f); $("#f-av").innerHTML = avatar({id:F.mid||"new", name:$("#f-name").value||"?", photo:F.photo},"xl"); }
+  const f = e.target.files?.[0]; e.target.value = "";
+  if(!f || !F || !["member","me","signup"].includes(F.type)) return;
+  try{ F.photo = await fileToAvatar(f); refreshPhoto(); }
   catch{ toast("Cette image ne peut pas être lue. Essaie un JPG ou un PNG."); }
 });
 document.addEventListener("keydown", e => { if(e.key==="Escape" && F) closeSheet(); });
@@ -546,14 +838,46 @@ window.addEventListener("hashchange", route);
 window.addEventListener("popstate", route);
 
 /* ---------- démarrage ---------- */
-try{
-  S.db = getDatabase(initializeApp(await loadFirebaseConfig()));
-  let first = true;
-  onValue(R(".info/connected"), s => { S.online = !!s.val(); if(S.online) S.slow = false; if(!first) render(); first = false; });
-  setTimeout(() => { if(myRooms.some(id => !S.loaded.has(id)) || (S.view.name==="room" && !S.rooms.has(S.view.id))){ S.slow = true; render(); } }, 10000);
-  myRooms.forEach(watchRoom);
-}catch(e){
-  console.error(e);
-  S.error = "Impossible de se connecter à la base Firebase. Vérifie l'adresse dans config.js.";
+let unsubDevice = null;
+async function boot(){
+  const cfg = await loadFirebaseConfig();
+  if(!cfg.apiKey){ S.error = "Configuration Firebase incomplète : ajoute une application Web dans les paramètres du projet Firebase."; render(); return; }
+  const app = initializeApp(cfg);
+  S.db = getDatabase(app);
+  const auth = getAuth(app);
+  onValue(R(".info/connected"), s => { const was = S.online; S.online = !!s.val(); if(S.online) S.slow = false; if(was!==S.online && S.myPid) render(); });
+  setTimeout(() => { if(S.myPid===undefined || !S.profilesReady){ S.slow = true; render(); } }, 10000);
+
+  onAuthStateChanged(auth, user => {
+    if(!user){
+      signInAnonymously(auth).catch(e => {
+        console.error(e);
+        S.error = e?.code==="auth/operation-not-allowed" || e?.code==="auth/admin-restricted-operation"
+          ? "La connexion « Anonyme » n'est pas activée dans Firebase (Authentication → Méthode de connexion)."
+          : "Connexion impossible pour l'instant. Vérifie ta connexion internet puis recharge la page.";
+        render();
+      });
+      return;
+    }
+    S.uid = user.uid;
+    startProfileWatches();
+    unsubDevice?.();
+    unsubDevice = onValue(R(`devices/${user.uid}`), async snap => {
+      const pid = snap.val()?.pid || null;
+      const changed = pid !== S.myPid;
+      S.myPid = pid;
+      if(changed){
+        for(const id of Object.keys(S.subs)) unwatchRoom(id);
+        S.roomIdsReady = false; startMyRooms();
+        if(pid){
+          await migrateLocal();
+          if(S.pendingJoin){ const h = S.pendingJoin; S.pendingJoin = null; location.hash = h; route(); return; }
+          closeSheet();
+        }
+      }
+      route();
+    }, err => { console.error(err); S.error = "La base refuse l'accès. Les règles de sécurité ne sont peut-être pas encore à jour."; render(); });
+  });
 }
-route();
+render();
+boot().catch(e => { console.error(e); S.error = "Impossible de démarrer Ardoise. Recharge la page."; render(); });

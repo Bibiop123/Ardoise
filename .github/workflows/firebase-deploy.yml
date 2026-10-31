@@ -1,4 +1,6 @@
-# Mise en ligne automatique sur Firebase Hosting à chaque modification de la branche main.
+# Mise en ligne automatique sur Firebase à chaque modification de la branche main.
+# 1. Si les règles de sécurité de la base ont changé, elles sont publiées d'abord.
+# 2. Le site est ensuite publié sur Firebase Hosting.
 name: Mise en ligne Firebase
 on:
   push:
@@ -9,6 +11,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Les règles de la base ont-elles changé ?
+        id: rules
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || git diff --name-only HEAD~1 HEAD | grep -q '^database.rules.json$'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publier les règles de la base
+        if: steps.rules.outputs.changed == 'true'
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_L_AR_7A10A }}
+        run: |
+          echo "$SA" > "$RUNNER_TEMP/sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          npx --yes firebase-tools@13 deploy --only database --project l-ar-7a10a --non-interactive
+
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}

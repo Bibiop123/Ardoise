@@ -2,8 +2,9 @@
 
 Partage de dépenses entre amis, façon Tricount : un groupe par événement, qui a payé, pour qui, et qui doit quoi à qui.
 
-- Un groupe = un lien secret à envoyer aux participants (pas de compte à créer).
-- Chaque personne choisit « qui elle est » dans le groupe ; ce choix reste sur son téléphone.
+- Chacun crée un mini profil (prénom, photo, code de 4 à 6 chiffres) et retrouve ses groupes sur tous ses appareils.
+- Le premier profil créé est l'administrateur : il peut redonner un code à un ami qui l'a oublié (Mon profil → Administration).
+- Seuls les membres d'un groupe peuvent le voir et le modifier ; le lien d'invitation permet de rejoindre un groupe.
 - Tout est sur Firebase : la page (Firebase Hosting) et les données (Realtime Database).
 - Installable sur l'écran d'accueil du téléphone (« Ajouter à l'écran d'accueil »).
 
@@ -12,7 +13,7 @@ Partage de dépenses entre amis, façon Tricount : un groupe par événement, qu
 Automatique : chaque modification poussée sur la branche `main` est publiée sur https://l-ar-7a10a.web.app
 par GitHub Actions (`.github/workflows/firebase-deploy.yml`).
 
-Les règles de sécurité de la base (`database.rules.json`) ne sont publiées qu'à la main, quand elles changent :
+Les règles de sécurité de la base (`database.rules.json`) sont publiées automatiquement quand elles changent. Pour les publier à la main :
 
 ```
 npx firebase-tools deploy --only database --project l-ar-7a10a
