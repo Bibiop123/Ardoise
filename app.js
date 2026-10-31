@@ -508,10 +508,10 @@ function sheetMyProfile(){
       <div class="list" style="gap:6px">${others.map(o => `<div class="row" style="background:var(--surface)">${avatar(o,"sm")}<div class="grow"><div class="t">${esc(o.name)}</div></div>
         <button class="pill-btn" data-act="admin-reset" data-pid="${o.pid}">Nouveau code</button></div>`).join("") || `<span class="hint">Personne d'autre n'a encore de profil.</span>`}</div>
     </details>` : ""}
-    ${SKINS.length < 2 ? "" : `<div class="field"><label>Apparence</label>
-      <div class="skins">${SKINS.map(k => `<button class="skin-opt${currentSkin()===k.id?" on":""}" data-act="skin" data-skin="${k.id}" aria-pressed="${currentSkin()===k.id}">
-        <span class="skin-sw" style="background:${k.bg};color:${k.fg};font-family:${k.font}">${k.sample}</span><span>${k.name}</span></button>`).join("")}</div>
-      <span class="hint">Le choix s'applique seulement sur cet appareil.</span></div>`}
+    ${SKINS.length < 2 ? "" : `<div class="field"><label for="f-skin">Apparence</label>
+      <div class="skin-select"><span class="skin-dot" id="f-skin-dot" style="background:${SKINS.find(k=>k.id===currentSkin())?.bg};color:${SKINS.find(k=>k.id===currentSkin())?.fg}">€</span>
+      <select id="f-skin">${SKINS.map(k => `<option value="${k.id}"${currentSkin()===k.id?" selected":""}>${k.name}</option>`).join("")}</select></div>
+      <span class="hint">Ton choix te suit sur tous tes appareils.</span></div>`}
     <button class="btn ghost block" data-act="logout">Me déconnecter de cet appareil</button>`);
 }
 function sheetAdminReset(pid){
@@ -881,6 +881,13 @@ $("#photoInput").addEventListener("change", async e => {
   catch{ toast("Cette image ne peut pas être lue. Essaie un JPG ou un PNG."); }
 });
 document.addEventListener("keydown", e => { if(e.key==="Escape" && F) closeSheet(); });
+document.addEventListener("change", e => {
+  if(e.target.id !== "f-skin") return;
+  const id = e.target.value, k = SKINS.find(s => s.id===id);
+  applySkin(id);
+  const dot = $("#f-skin-dot"); if(dot && k){ dot.style.background = k.bg; dot.style.color = k.fg; }
+  if(S.myPid) update(R(`profiles/${S.myPid}`), {skin:id}).catch(()=>{});
+});
 window.addEventListener("hashchange", route);
 window.addEventListener("popstate", route);
 

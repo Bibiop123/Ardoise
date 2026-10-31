@@ -233,3 +233,6 @@ input[type=text],input[type=date],input[type=number],input[type=password]{border
 .field{gap:10px}
 .field > label{margin-bottom:6px;text-underline-offset:6px}
 .sheet{gap:22px}
+.skin-select{display:flex;align-items:center;gap:10px}
+.skin-dot{width:42px;height:42px;border-radius:12px;flex:none;display:grid;place-items:center;font-weight:800;font-family:var(--f-display);border:1px solid var(--edge-strong)}
+.skin-select select{flex:1;min-width:0;font:inherit;font-size:16px;font-weight:600;padding:11px 14px;border-radius:12px;border:1px solid var(--edge-strong);background:var(--surface);color:var(--ink)}
