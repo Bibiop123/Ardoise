@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getDatabase, ref, onValue, set, update, remove } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-import { firebaseConfig } from "./config.js";
+import { loadFirebaseConfig } from "./config.js";
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -545,7 +545,7 @@ window.addEventListener("popstate", route);
 
 /* ---------- démarrage ---------- */
 try{
-  S.db = getDatabase(initializeApp(firebaseConfig));
+  S.db = getDatabase(initializeApp(await loadFirebaseConfig()));
   let first = true;
   onValue(R(".info/connected"), s => { S.online = !!s.val(); if(S.online) S.slow = false; if(!first) render(); first = false; });
   setTimeout(() => { if(myRooms.some(id => !S.loaded.has(id)) || (S.view.name==="room" && !S.rooms.has(S.view.id))){ S.slow = true; render(); } }, 10000);
