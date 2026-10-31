@@ -7,24 +7,16 @@ Partage de dépenses entre amis, façon Tricount : un groupe par événement, qu
 - Tout est sur Firebase : la page (Firebase Hosting) et les données (Realtime Database).
 - Installable sur l'écran d'accueil du téléphone (« Ajouter à l'écran d'accueil »).
 
-## Mise en ligne (Windows, PowerShell)
+## Mise en ligne
 
-Prérequis : Node.js LTS installé (https://nodejs.org).
+Automatique : chaque modification poussée sur la branche `main` est publiée sur https://l-ar-7a10a.web.app
+par GitHub Actions (`.github/workflows/firebase-deploy.yml`).
 
-1. Télécharger ce dépôt (Code → Download ZIP) et le décompresser.
-2. Ouvrir PowerShell dans le dossier décompressé.
-3. Lancer :
+Les règles de sécurité de la base (`database.rules.json`) ne sont publiées qu'à la main, quand elles changent :
 
 ```
-npx firebase-tools login
-npx firebase-tools deploy
+npx firebase-tools deploy --only database --project l-ar-7a10a
 ```
-
-`deploy` publie la page **et** les règles de sécurité de la base (`database.rules.json`) sur le projet Firebase `l-ar-7a10a`.
-
-L'appli est ensuite disponible sur https://l-ar-7a10a.web.app
-
-Pour une mise à jour : re-télécharger le ZIP, puis `npx firebase-tools deploy`.
 
 ## Fichiers
 
@@ -35,5 +27,6 @@ Pour une mise à jour : re-télécharger le ZIP, puis `npx firebase-tools deploy
 | `style.css` | design |
 | `config.js` | adresse de la base Firebase |
 | `firebase.json`, `.firebaserc` | déploiement Firebase |
-| `database.rules.json` | règles de sécurité de la base (publiées par `deploy`) |
+| `database.rules.json` | règles de sécurité de la base |
+| `.github/workflows/` | mise en ligne automatique |
 | `manifest.webmanifest`, `icon-*` | installation sur téléphone |
