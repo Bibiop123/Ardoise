@@ -35,15 +35,12 @@ const PIN_RE = /^\d{4,6}$/;
 /* ---------- apparence ---------- */
 const SKINS = [
   {id:"ardoise", name:"Ardoise", bg:"#1b2035", fg:"#ff8a78", font:"'Bricolage Grotesque',sans-serif", sample:"42 €"},
-  {id:"ticket", name:"Ticket", bg:"#fbf8f1", fg:"#b5342a", font:"'Courier Prime',monospace", sample:"42,50"},
-  {id:"craie", name:"Craie", bg:"#26332c", fg:"#f7c9a8", font:"Caveat,cursive", sample:"42 €"},
-  {id:"pop", name:"Pop", bg:"#ff5a7a", fg:"#ffffff", font:"Fredoka,sans-serif", sample:"42 €"},
 ];
 const currentSkin = () => { try{ return localStorage.getItem("ardoise.skin") || "ardoise"; }catch{ return "ardoise"; } };
 function applySkin(id){
   document.documentElement.dataset.skin = id;
   try{ localStorage.setItem("ardoise.skin", id); }catch{}
-  const tc = {ardoise:"#1b2035", ticket:"#e9e4d8", craie:"#26332c", pop:"#fff6e0"}[id];
+  const tc = SKINS.find(k => k.id===id)?.theme || "#1b2035";
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", tc);
 }
 
@@ -498,10 +495,10 @@ function sheetMyProfile(){
       <div class="list" style="gap:6px">${others.map(o => `<div class="row" style="background:var(--surface)">${avatar(o,"sm")}<div class="grow"><div class="t">${esc(o.name)}</div></div>
         <button class="pill-btn" data-act="admin-reset" data-pid="${o.pid}">Nouveau code</button></div>`).join("") || `<span class="hint">Personne d'autre n'a encore de profil.</span>`}</div>
     </details>` : ""}
-    <div class="field"><label>Apparence</label>
+    ${SKINS.length < 2 ? "" : `<div class="field"><label>Apparence</label>
       <div class="skins">${SKINS.map(k => `<button class="skin-opt${currentSkin()===k.id?" on":""}" data-act="skin" data-skin="${k.id}" aria-pressed="${currentSkin()===k.id}">
         <span class="skin-sw" style="background:${k.bg};color:${k.fg};font-family:${k.font}">${k.sample}</span><span>${k.name}</span></button>`).join("")}</div>
-      <span class="hint">Le style s'applique seulement sur cet appareil.</span></div>
+      <span class="hint">Le style s'applique seulement sur cet appareil.</span></div>`}
     <button class="btn ghost block" data-act="logout">Me déconnecter de cet appareil</button>`);
 }
 function sheetAdminReset(pid){
