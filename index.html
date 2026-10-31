@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="style.css">
-<script>try{localStorage.removeItem("ardoise.skin");}catch(e){}</script>
+<script>try{var k=localStorage.getItem("ardoise.skin");if(k&&k!=="ardoise")document.documentElement.dataset.skin=k;}catch(e){}</script>
 </head>
 <body>
 <div class="wrap" id="app"></div>

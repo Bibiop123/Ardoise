@@ -34,11 +34,16 @@ const PIN_RE = /^\d{4,6}$/;
 
 /* ---------- apparence ---------- */
 const SKINS = [
-  {id:"ardoise", name:"Ardoise", bg:"#1b2035", fg:"#ff8a78", font:"'Bricolage Grotesque',sans-serif", sample:"42 €"},
+  {id:"ardoise", name:"Ardoise", bg:"#1b2035", fg:"#ff8a78", theme:"#1b2035", font:"'Bricolage Grotesque',sans-serif", sample:"42 €"},
+  {id:"nuit", name:"Nuit", bg:"#1c2240", fg:"#f0a296", theme:"#12162a", font:"'Bricolage Grotesque',sans-serif", sample:"42 €"},
+  {id:"foret", name:"Forêt", bg:"#1b2520", fg:"#e8a68f", theme:"#131a17", font:"'Bricolage Grotesque',sans-serif", sample:"42 €"},
+  {id:"espresso", name:"Espresso", bg:"#251d18", fg:"#e89a82", theme:"#1a1512", font:"'Bricolage Grotesque',sans-serif", sample:"42 €"},
+  {id:"graphite", name:"Graphite", bg:"#202224", fg:"#ee9c90", theme:"#161718", font:"'Bricolage Grotesque',sans-serif", sample:"42 €"},
+  {id:"prune", name:"Prune", bg:"#251d2d", fg:"#f0a0a0", theme:"#1a1420", font:"'Bricolage Grotesque',sans-serif", sample:"42 €"}
 ];
 const currentSkin = () => { try{ return localStorage.getItem("ardoise.skin") || "ardoise"; }catch{ return "ardoise"; } };
 function applySkin(id){
-  document.documentElement.dataset.skin = id;
+  if(id==="ardoise") delete document.documentElement.dataset.skin; else document.documentElement.dataset.skin = id;
   try{ localStorage.setItem("ardoise.skin", id); }catch{}
   const tc = SKINS.find(k => k.id===id)?.theme || "#1b2035";
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", tc);
@@ -498,7 +503,7 @@ function sheetMyProfile(){
     ${SKINS.length < 2 ? "" : `<div class="field"><label>Apparence</label>
       <div class="skins">${SKINS.map(k => `<button class="skin-opt${currentSkin()===k.id?" on":""}" data-act="skin" data-skin="${k.id}" aria-pressed="${currentSkin()===k.id}">
         <span class="skin-sw" style="background:${k.bg};color:${k.fg};font-family:${k.font}">${k.sample}</span><span>${k.name}</span></button>`).join("")}</div>
-      <span class="hint">Le style s'applique seulement sur cet appareil.</span></div>`}
+      <span class="hint">« Ardoise » suit le mode clair ou sombre de ton téléphone ; les autres styles sont toujours sombres. Le choix s'applique seulement sur cet appareil.</span></div>`}
     <button class="btn ghost block" data-act="logout">Me déconnecter de cet appareil</button>`);
 }
 function sheetAdminReset(pid){
