@@ -272,7 +272,7 @@ function renderWelcome(){
   $("#app").innerHTML = `${brandBar()}
     <section class="slate">
       <span class="label">Bienvenue</span>
-      <div class="big zero" style="font-size:clamp(1.8rem,8vw,2.4rem)">Les bons comptes font les bons amis.</div>
+      <div class="big zero" style="font-size:clamp(1.8rem,8vw,2.4rem)">Je te dois combien déjà ?</div>
       <div class="sub">${S.pendingJoin ? "On t'a invité dans un groupe. Connecte-toi ou crée ton profil pour le rejoindre." : "Crée ton profil une fois, retrouve tes groupes sur tous tes appareils."}</div>
     </section>
     ${profs.length ? `<section class="list" aria-label="Profils">
