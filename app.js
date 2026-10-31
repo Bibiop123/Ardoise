@@ -34,20 +34,23 @@ const PIN_RE = /^\d{4,6}$/;
 
 /* ---------- apparence ---------- */
 const SKINS = [
-  {id:"ardoise", name:"Ardoise", bg:"#1b2035", fg:"#ff8a78", theme:"#1b2035", font:"'Bricolage Grotesque',sans-serif", sample:"42 €"},
+  {id:"ardoise", name:"Ardoise", bg:"#232842", fg:"#ff8a78", theme:"#0f1220", font:"'Bricolage Grotesque',sans-serif", sample:"42 €"},
   {id:"nuit", name:"Nuit", bg:"#1c2240", fg:"#f0a296", theme:"#12162a", font:"'Bricolage Grotesque',sans-serif", sample:"42 €"},
   {id:"foret", name:"Forêt", bg:"#1b2520", fg:"#e8a68f", theme:"#131a17", font:"'Bricolage Grotesque',sans-serif", sample:"42 €"},
   {id:"espresso", name:"Espresso", bg:"#251d18", fg:"#e89a82", theme:"#1a1512", font:"'Bricolage Grotesque',sans-serif", sample:"42 €"},
   {id:"graphite", name:"Graphite", bg:"#202224", fg:"#ee9c90", theme:"#161718", font:"'Bricolage Grotesque',sans-serif", sample:"42 €"},
   {id:"prune", name:"Prune", bg:"#251d2d", fg:"#f0a0a0", theme:"#1a1420", font:"'Bricolage Grotesque',sans-serif", sample:"42 €"}
 ];
-const currentSkin = () => { try{ return localStorage.getItem("ardoise.skin") || "ardoise"; }catch{ return "ardoise"; } };
+const currentSkin = () => document.documentElement.dataset.skin || "ardoise";
 function applySkin(id){
-  if(id==="ardoise") delete document.documentElement.dataset.skin; else document.documentElement.dataset.skin = id;
+  if(!SKINS.some(k => k.id===id)) id = "ardoise";
+  document.documentElement.dataset.skin = id;
   try{ localStorage.setItem("ardoise.skin", id); }catch{}
   const tc = SKINS.find(k => k.id===id)?.theme || "#1b2035";
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", tc);
 }
+
+applySkin(currentSkin());
 
 /* ---------- état ---------- */
 const S = {
@@ -152,7 +155,10 @@ function startProfileWatches(){
   unsubProfiles?.(); unsubAdmin?.();
   unsubProfiles = onValue(R("profiles"), snap => {
     S.profiles = new Map(Object.entries(snap.val()||{}).map(([pid,p]) => [pid, {pid, ...p}]));
-    S.profilesReady = true; render();
+    S.profilesReady = true;
+    const want = S.myPid && S.profiles.get(S.myPid)?.skin;
+    if(want && want !== currentSkin()) applySkin(want);
+    render();
   }, err => { console.error(err); S.profilesReady = true; S.error = "La base refuse la lecture des profils. Les règles de sécurité ne sont peut-être pas encore à jour."; render(); });
   unsubAdmin = onValue(R("meta/admin"), snap => { S.adminPid = snap.val(); render(); }, () => {});
 }
@@ -735,6 +741,7 @@ document.addEventListener("click", async ev => {
       break; }
     case "skin": {
       applySkin(el.dataset.skin);
+      if(S.myPid) update(R(`profiles/${S.myPid}`), {skin: el.dataset.skin}).catch(()=>{});
       document.querySelectorAll(".skin-opt").forEach(b => { const on = b.dataset.skin===el.dataset.skin; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); });
       break; }
     case "claim-open": S.claimOpen = {...(S.claimOpen||{}), [rid]:true}; render(); break;
@@ -900,6 +907,8 @@ async function boot(){
       if(changed){
         for(const id of Object.keys(S.subs)) unwatchRoom(id);
         S.roomIdsReady = false; startMyRooms();
+        const want = pid && S.profiles.get(pid)?.skin;
+        if(want && want !== currentSkin()) applySkin(want);
         if(pid){
           await migrateLocal();
           if(S.pendingJoin){ const h = S.pendingJoin; S.pendingJoin = null; location.hash = h; route(); return; }
