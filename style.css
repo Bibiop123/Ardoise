@@ -229,3 +229,7 @@ html:root[data-skin="ardoise"]{--bg:#0f1220;--surface:#181c2e;--surface-2:#23284
 .pick.on,.pick[aria-pressed="true"],.skin-opt.on{border-color:var(--accent)}
 input[type=text],input[type=date],input[type=number],input[type=password]{border-color:var(--edge-strong)}
 .room-card:hover,.row:not(.transfer):hover{border-color:var(--edge-strong)}
+/* Plus d'air sous les titres de champs */
+.field{gap:10px}
+.field > label{margin-bottom:6px;text-underline-offset:6px}
+.sheet{gap:22px}
