@@ -4,9 +4,24 @@
   },
   "hosting": {
     "public": ".",
-    "ignore": ["firebase.json", "database.rules.json", "README.md", ".firebaserc", "**/.*"],
+    "ignore": [
+      "firebase.json",
+      "database.rules.json",
+      "README.md",
+      ".firebaserc",
+      "**/.*",
+      ".github/**"
+    ],
     "headers": [
-      { "source": "**/*.@(js|css|html|webmanifest)", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
+      {
+        "source": "**/*.@(js|css|html|webmanifest)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      }
     ]
   }
 }

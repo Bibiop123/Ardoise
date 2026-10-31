@@ -1,0 +1,17 @@
+# Mise en ligne automatique sur Firebase Hosting à chaque modification de la branche main.
+name: Mise en ligne Firebase
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_L_AR_7A10A }}
+          channelId: live
+          projectId: l-ar-7a10a
