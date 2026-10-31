@@ -404,6 +404,8 @@ function renderRoom(rid){
         <span class="hint">On ne peut plus ajouter ni modifier de dépenses${left ? ", mais les remboursements restants peuvent encore être réglés" : ""}.</span>
       </section>`; })() : ""}
     ${meBlock}
+    <div class="invite-bar"><div class="grow"><span class="label">Lien pour rejoindre le groupe</span><span class="invite-url">${esc(shareLink(rid).replace(/^https?:\/\//,""))}</span></div>
+      <button class="btn" data-act="copy-room-link">Copier</button></div>
     <div class="tabs" role="tablist">
       ${[["depenses","Dépenses"],["equilibres","Équilibres"],["membres","Membres"]].map(([k,l])=>`<button role="tab" aria-selected="${S.tab===k}" data-act="tab" data-tab="${k}">${l}</button>`).join("")}
     </div>
@@ -763,6 +765,10 @@ document.addEventListener("click", async ev => {
     case "room-rm-other": F.others.splice(+el.dataset.i,1); drawOthers(); break;
     case "room-create": createRoom(el); break;
     case "invite": sheetInvite(rid, false); break;
+    case "copy-room-link":
+      try{ await navigator.clipboard.writeText(shareLink(rid)); el.textContent = "Copié ✓"; toast("Lien copié : colle-le dans WhatsApp ou par SMS"); setTimeout(()=>{ el.textContent = "Copier"; }, 2000); }
+      catch{ sheetInvite(rid, false); }
+      break;
     case "copy-link": {
       const i = $("#f-link");
       try{ await navigator.clipboard.writeText(i.value); toast("Lien copié"); }
