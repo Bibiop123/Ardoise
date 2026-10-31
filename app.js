@@ -524,8 +524,7 @@ function sheetAdminReset(pid){
 /* groupes */
 const othersFold = (open=false) => `<details class="fold quiet"${open?" open":""}><summary>${plusSm} Ajouter quelqu'un qui n'a pas de profil</summary>
       <div style="display:flex;gap:8px"><input type="text" id="f-other" maxlength="30" placeholder="Prénom" style="flex:1" aria-label="Prénom"><button class="btn ghost" data-act="room-add-other">Ajouter</button></div>
-      <div class="chips" id="f-others"></div>
-      <span class="hint">Cette personne pourra relier son profil plus tard grâce au lien d'invitation.</span></details>`;
+      <span class="hint">La personne apparaît dans la liste au-dessus. Elle pourra relier son profil plus tard grâce au lien d'invitation.</span></details>`;
 const friendPicker = list => `<div class="pick-row" id="f-friends">${list.map(p => `<button class="pick" data-act="pick-friend" data-pid="${p.pid}" aria-pressed="false">${avatar(p,"sm")}${esc(p.name)}${p.pid===S.myPid?" <span class='muted'>(moi)</span>":""}</button>`).join("")}</div>`;
 
 function sheetNewRoom(){
@@ -541,7 +540,11 @@ function sheetNewRoom(){
   $("#f-other").addEventListener("keydown", e => { if(e.key==="Enter"){ e.preventDefault(); addOther(); } });
 }
 function addOther(){ const i=$("#f-other"); const v=i.value.trim(); if(!v) return; F.others.push(v); i.value=""; i.focus(); drawOthers(); }
-function drawOthers(){ $("#f-others").innerHTML = F.others.map((n,i)=>`<span class="tag">${esc(n)}<button data-act="room-rm-other" data-i="${i}" aria-label="Retirer ${esc(n)}">×</button></span>`).join(""); }
+function drawOthers(){
+  const row = $("#f-friends"); if(!row) return;
+  row.querySelectorAll(".manual").forEach(e => e.remove());
+  row.insertAdjacentHTML("beforeend", F.others.map((n,i) => `<span class="pick on manual">${avatar({id:"m"+n, name:n},"sm")}${esc(n)}<button class="pick-x" data-act="room-rm-other" data-i="${i}" aria-label="Retirer ${esc(n)}">×</button></span>`).join(""));
+}
 
 async function createRoom(btn){
   const name=$("#f-room").value.trim();
@@ -580,7 +583,7 @@ function sheetAddMembers(rid){
   F = {type:"add-members", rid, picked:new Set(), others:[], seed:"new", photo:null};
   openSheet(`<div class="sheet-head"><h2>Ajouter des participants</h2>${closeBtn}</div>
     <div class="field"><label>Qui ajouter ?</label>
-      ${friends.length ? friendPicker(friends) : `<span class="hint">Tous les amis inscrits sont déjà dans le groupe.</span>`}
+      ${friendPicker(friends)}${friends.length ? "" : `<span class="hint">Tous les amis inscrits sont déjà dans le groupe.</span>`}
       ${othersFold(!friends.length)}</div>
     <button class="btn block" data-act="add-members-ok">Ajouter au groupe</button>`);
   $("#f-other").addEventListener("keydown", e => { if(e.key==="Enter"){ e.preventDefault(); addOther(); } });
