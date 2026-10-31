@@ -503,7 +503,7 @@ function sheetMyProfile(){
     ${SKINS.length < 2 ? "" : `<div class="field"><label>Apparence</label>
       <div class="skins">${SKINS.map(k => `<button class="skin-opt${currentSkin()===k.id?" on":""}" data-act="skin" data-skin="${k.id}" aria-pressed="${currentSkin()===k.id}">
         <span class="skin-sw" style="background:${k.bg};color:${k.fg};font-family:${k.font}">${k.sample}</span><span>${k.name}</span></button>`).join("")}</div>
-      <span class="hint">« Ardoise » suit le mode clair ou sombre de ton téléphone ; les autres styles sont toujours sombres. Le choix s'applique seulement sur cet appareil.</span></div>`}
+      <span class="hint">Le choix s'applique seulement sur cet appareil.</span></div>`}
     <button class="btn ghost block" data-act="logout">Me déconnecter de cet appareil</button>`);
 }
 function sheetAdminReset(pid){
