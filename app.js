@@ -280,7 +280,12 @@ function renderWelcome(){
       <span class="hint">Touche ton prénom puis tape ton code.</span>
       <div class="who-grid">${profs.map(p => `<button class="who-btn" data-act="login-pick" data-pid="${p.pid}">${avatar(p,"who")}<span>${esc(p.name)}</span></button>`).join("")}</div>
     </section>` : ""}
-    <button class="btn block" data-act="signup">${plusSm} ${profs.length ? "Je n'ai pas encore de profil" : "Créer mon profil"}</button>`;
+    <div class="join-banner">
+      <div class="join-head"><span class="join-emoji" aria-hidden="true">👋</span><div><b>Nouveau ici ? 30 secondes chrono.</b>
+        <span>Pas d'e-mail, pas de mot de passe, rien à valider.</span></div></div>
+      <div class="join-steps"><span><i>1</i>Ton prénom</span><span><i>2</i>Une photo, si tu veux</span><span><i>3</i>Un code à 4 chiffres</span></div>
+      <button class="btn block" data-act="signup">${plusSm} ${profs.length ? "Je crée mon profil" : "Créer mon profil"}</button>
+    </div>`;
 }
 
 function renderMissing(rid){

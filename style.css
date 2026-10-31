@@ -255,3 +255,15 @@ input[type=text],input[type=date],input[type=number],input[type=password]{border
 .who-btn:hover .av.who,.who-btn:focus-visible .av.who{transform:scale(1.05)}
 .who-btn:active .av.who{transform:scale(.96)}
 @media (prefers-reduced-motion:reduce){.av.who{transition:none}}
+
+/* bandeau d'inscription */
+.join-banner{display:flex;flex-direction:column;gap:14px;background:var(--accent-soft);border:1.5px solid var(--accent);border-radius:20px;padding:16px}
+.join-head{display:flex;gap:12px;align-items:center}
+.join-head b{display:block;font-family:var(--f-display);font-size:1.15rem}
+.join-head span{color:var(--muted);font-size:.92rem}
+.join-emoji{font-size:2rem;line-height:1;display:inline-block;animation:wave 2.4s ease-in-out 1s 2;transform-origin:70% 70%}
+@keyframes wave{0%,60%,100%{transform:rotate(0)}10%,30%{transform:rotate(16deg)}20%,40%{transform:rotate(-8deg)}}
+@media (prefers-reduced-motion:reduce){.join-emoji{animation:none}}
+.join-steps{display:flex;flex-wrap:wrap;gap:8px}
+.join-steps span{display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--edge);border-radius:999px;padding:5px 12px 5px 5px;font-size:.85rem;font-weight:600}
+.join-steps i{font-style:normal;width:22px;height:22px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-size:.75rem;font-weight:800}
