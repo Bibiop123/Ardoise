@@ -1,12 +1,10 @@
-// Configuration Firebase.
-// Sur Firebase Hosting, elle est fournie automatiquement par /__/firebase/init.json
-// (aucune clé à recopier). L'adresse ci-dessous sert seulement de secours ailleurs.
-const FALLBACK = { databaseURL: "https://base-bonfire-default-rtdb.firebaseio.com" };
+// Configuration Firebase du projet Ardoise (l-ar-7a10a).
+// Ces informations ne sont pas secrètes : la sécurité est assurée par database.rules.json.
+const CONFIG = {
+  projectId: "l-ar-7a10a",
+  databaseURL: "https://l-ar-7a10a-default-rtdb.europe-west1.firebasedatabase.app",
+};
 
 export async function loadFirebaseConfig(){
-  try{
-    const r = await fetch("/__/firebase/init.json", { cache: "no-store" });
-    if(r.ok){ const c = await r.json(); if(c && c.databaseURL) return c; }
-  }catch{}
-  return FALLBACK;
+  return CONFIG;
 }

@@ -7,22 +7,24 @@ Partage de dépenses entre amis, façon Tricount : un groupe par événement, qu
 - Tout est sur Firebase : la page (Firebase Hosting) et les données (Realtime Database).
 - Installable sur l'écran d'accueil du téléphone (« Ajouter à l'écran d'accueil »).
 
-## Mise en ligne
+## Mise en ligne (Windows, PowerShell)
 
-Prérequis : Node.js installé (https://nodejs.org).
+Prérequis : Node.js LTS installé (https://nodejs.org).
 
-```bash
-npm install -g firebase-tools   # une seule fois
-firebase login                  # une seule fois
-git clone https://github.com/Bibiop123/Ardoise.git
-cd Ardoise
-firebase deploy
+1. Télécharger ce dépôt (Code → Download ZIP) et le décompresser.
+2. Ouvrir PowerShell dans le dossier décompressé.
+3. Lancer :
+
+```
+npx firebase-tools login
+npx firebase-tools deploy
 ```
 
-`firebase deploy` publie la page **et** les règles de sécurité de la base (`database.rules.json`).
-Pour une mise à jour : `git pull` puis `firebase deploy`.
+`deploy` publie la page **et** les règles de sécurité de la base (`database.rules.json`) sur le projet Firebase `l-ar-7a10a`.
 
-L'appli est ensuite disponible sur https://base-bonfire.web.app
+L'appli est ensuite disponible sur https://l-ar-7a10a.web.app
+
+Pour une mise à jour : re-télécharger le ZIP, puis `npx firebase-tools deploy`.
 
 ## Fichiers
 
@@ -31,7 +33,7 @@ L'appli est ensuite disponible sur https://base-bonfire.web.app
 | `index.html` | page |
 | `app.js` | logique de l'appli |
 | `style.css` | design |
-| `config.js` | configuration Firebase (chargée automatiquement sur Firebase Hosting) |
+| `config.js` | adresse de la base Firebase |
 | `firebase.json`, `.firebaserc` | déploiement Firebase |
-| `database.rules.json` | règles de sécurité à coller dans Firebase |
+| `database.rules.json` | règles de sécurité de la base (publiées par `deploy`) |
 | `manifest.webmanifest`, `icon-*` | installation sur téléphone |
