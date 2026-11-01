@@ -101,10 +101,11 @@ function shares(amount, split){
   while(used < amount){ res[rem[k % rem.length][0]]++; used++; k++; }
   return res;
 }
+const LEAF = '<svg class="leaf" viewBox="0 0 24 24" aria-hidden="true"><path fill="#3f9a3a" d="M11.6 20.6C6 20.4 3 16.6 3.4 10.3c5.7-.2 8.6 3.4 8.2 10.3z"/><path fill="#7cc04a" d="M12.4 20.6c-.6-7.4 2.6-12.4 8.4-13.5.9 7.2-2.3 12.6-8.4 13.5z"/><path fill="none" stroke="#fff" stroke-width=".9" stroke-linecap="round" stroke-opacity=".75" d="M11.4 19.6C9.8 16.6 7.8 14 5.4 12.2M12.9 19.3c1.6-3.6 3.7-6.9 6.6-10"/></svg>';
 const PART_KINDS = [
   {k:"alcool", label:"Alcool", ico:"🍷"},
   {k:"viande", label:"Viande", ico:"🥩"},
-  {k:"vege",   label:"Végé",   ico:"🥗"},
+  {k:"vege",   label:"Végé",   ico:LEAF},
   {k:"autre",  label:"Autre",  ico:"➕"},
 ];
 const partIco = k => (PART_KINDS.find(p => p.k===k) || PART_KINDS[3]).ico;
@@ -451,10 +452,10 @@ function renderRoom(rid){
     body = mem.map(m => `<div class="row member-row"><button class="member-main" data-act="edit-member" data-mid="${m.id}">${avatar(m)}<div class="grow"><div class="t">${esc(m.name)}</div>
       <div class="s">${m.id===me?.id ? "C'est toi" : m.pid ? "A un profil Ardoise" : "Pas encore de profil"}</div></div></button>
       <div class="diet">
-        <button class="diet-btn${m.diet?.vege ? " on" : ""}" data-act="diet" data-mid="${m.id}" data-f="vege" aria-pressed="${!!m.diet?.vege}" title="Végétarien" ${editable?"":"disabled"}><span aria-hidden="true">🥗</span><span class="sr-only">Végétarien</span></button>
+        <button class="diet-btn${m.diet?.vege ? " on" : ""}" data-act="diet" data-mid="${m.id}" data-f="vege" aria-pressed="${!!m.diet?.vege}" title="Végétarien" ${editable?"":"disabled"}><span aria-hidden="true">${LEAF}</span><span class="sr-only">Végétarien</span></button>
         <button class="diet-btn${m.diet?.noAlcohol ? "" : " on"}" data-act="diet" data-mid="${m.id}" data-f="noAlcohol" aria-pressed="${!m.diet?.noAlcohol}" title="${m.diet?.noAlcohol ? "Ne boit pas d'alcool" : "Boit de l'alcool"}" ${editable?"":"disabled"}><span aria-hidden="true">🍷</span><span class="sr-only">Boit de l'alcool</span></button>
       </div></div>`).join("")
-      + `<p class="hint" style="margin:0 4px">🥗 allumé : végétarien · 🍷 éteint : ne boit pas d'alcool. Les lignes « dont alcool » et « dont viande » en tiennent compte automatiquement.</p>`
+      + `<p class="hint" style="margin:0 4px">${LEAF} allumé : végétarien · 🍷 éteint : ne boit pas d'alcool. Les lignes « dont alcool » et « dont viande » en tiennent compte automatiquement.</p>`
       + (editable ? `<button class="btn ghost block" data-act="add-member">${plusSm} Ajouter des participants</button>` : "");
   }
 
@@ -577,7 +578,7 @@ function sheetMyProfile(){
     <div class="field"><label for="f-name">Prénom ou surnom</label><input type="text" id="f-name" maxlength="30" value="${esc(p.name)}"></div>
     <button class="btn block" data-act="me-save">Enregistrer</button>
     <div class="field"><label>Mes préférences</label>
-      <button class="switch-row" data-act="me-diet" data-f="vege" role="switch" aria-checked="${!!p.diet?.vege}"><span>🥗 Je suis végétarien·ne</span><span class="switch${p.diet?.vege?" on":""}"></span></button>
+      <button class="switch-row" data-act="me-diet" data-f="vege" role="switch" aria-checked="${!!p.diet?.vege}"><span>${LEAF} Je suis végétarien·ne</span><span class="switch${p.diet?.vege?" on":""}"></span></button>
       <button class="switch-row" data-act="me-diet" data-f="noAlcohol" role="switch" aria-checked="${!!p.diet?.noAlcohol}"><span>🍷 Je ne bois pas d'alcool</span><span class="switch${p.diet?.noAlcohol?" on":""}"></span></button>
       <span class="hint">C'est ton réglage de départ quand tu rejoins un nouveau groupe. Tes groupes actuels ne changent pas : dans chaque groupe, tu peux l'ajuster dans l'onglet Membres.</span></div>
     <details class="fold"><summary>Changer mon code</summary>
@@ -788,7 +789,7 @@ function drawPartWho(){
     const noFlag = !mem.some(m => p.k==="alcool" ? m.diet?.noAlcohol : m.diet?.vege);
     box.innerHTML = `<span class="hint">Partagé entre ${list.length} personne${list.length>1?"s":""}, d'après l'onglet Membres :</span>
       <div class="faces">${list.map(m => avatar(m,"sm")).join("")}</div>
-      ${noFlag ? `<span class="hint">${p.k==="alcool" ? "Personne n'est noté comme ne buvant pas d'alcool" : "Personne n'est noté végétarien"} : active les boutons 🥗 / 🍷 dans Membres pour affiner.</span>` : ""}`;
+      ${noFlag ? `<span class="hint">${p.k==="alcool" ? "Personne n'est noté comme ne buvant pas d'alcool" : "Personne n'est noté végétarien"} : active les boutons ${LEAF} / 🍷 dans Membres pour affiner.</span>` : ""}`;
     const each = document.querySelector(`.part-each[data-i="${box.dataset.i}"]`), amt = parseAmount(p.amountStr);
     if(each) each.textContent = list.length && amt ? `≈ ${money(Math.floor(amt/list.length))} chacun` : "";
   });

@@ -304,3 +304,6 @@ input[type=text],input[type=date],input[type=number],input[type=password]{border
 body.kb-open .sheet{border-radius:18px 18px 0 0;padding-bottom:16px}
 body.kb-open .fab{display:none}
 .close-locked{display:flex;gap:10px;align-items:flex-start;border:1px dashed var(--edge-strong);border-radius:14px;padding:12px 14px;color:var(--muted);font-size:.88rem;margin-top:8px}
+.leaf{width:1.35em;height:1.35em;vertical-align:-.3em;display:inline-block}
+.diet-btn .leaf{width:24px;height:24px}
+.part-ico .leaf{width:1.4rem;height:1.4rem}
