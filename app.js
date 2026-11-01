@@ -149,7 +149,7 @@ function settle(bal){
 /* ---------- accès aux données ---------- */
 function withProfile(m){
   const p = m.pid ? S.profiles.get(m.pid) : null;
-  return p ? {...m, name: p.name || m.name, photo: p.photo || null} : m;
+  return p ? {...m, name: p.name || m.name, photo: p.photo || null, diet: {...(p.diet||{}), ...(m.diet||{})}} : m;
 }
 const membersOf = rid => (S.rooms.get(rid)?.members || []).map(withProfile);
 const expensesOf = rid => S.rooms.get(rid)?.expenses || [];
@@ -562,6 +562,10 @@ function sheetMyProfile(){
     ${photoBlock(S.myPid, p.name, F.photo)}
     <div class="field"><label for="f-name">Prénom ou surnom</label><input type="text" id="f-name" maxlength="30" value="${esc(p.name)}"></div>
     <button class="btn block" data-act="me-save">Enregistrer</button>
+    <div class="field"><label>Mes préférences</label>
+      <button class="switch-row" data-act="me-diet" data-f="vege" role="switch" aria-checked="${!!p.diet?.vege}"><span>🥗 Je suis végétarien·ne</span><span class="switch${p.diet?.vege?" on":""}"></span></button>
+      <button class="switch-row" data-act="me-diet" data-f="noAlcohol" role="switch" aria-checked="${!!p.diet?.noAlcohol}"><span>🍷 Je ne bois pas d'alcool</span><span class="switch${p.diet?.noAlcohol?" on":""}"></span></button>
+      <span class="hint">Appliqué automatiquement dans tous tes groupes, présents et futurs, pour les lignes « dont alcool / viande / végé ».</span></div>
     <details class="fold"><summary>Changer mon code</summary>
       ${pinField("f-pin","Nouveau code (4 à 6 chiffres)")}${pinField("f-pin2","Confirme le nouveau code")}
       <button class="btn ghost block" data-act="me-pin">Changer mon code</button></details>
@@ -850,6 +854,14 @@ document.addEventListener("click", async ev => {
       if(pin!==pin2){ toast("Les deux codes ne sont pas identiques."); break; }
       const h = await pinHash(S.myPid, pin);
       if(await write(() => update(R("/"), {[`secrets/${S.myPid}`]:{pinHash:h}, [`devices/${S.uid}`]:{pid:S.myPid, proof:h}}), "Code changé")) closeSheet();
+      break; }
+    case "me-diet": {
+      const f = el.dataset.f, val = !myProfile()?.diet?.[f];
+      el.setAttribute("aria-checked", val); el.querySelector(".switch")?.classList.toggle("on", val);
+      const up = {[`profiles/${S.myPid}/diet/${f}`]: val};
+      /* on retire les réglages faits à la main sur moi dans mes groupes, pour que le profil s'applique partout */
+      for(const rid of S.roomIds){ const me = (S.rooms.get(rid)?.members||[]).find(m => m.pid===S.myPid); if(me?.diet && f in me.diet) up[`rooms/${rid}/members/${me.id}/diet/${f}`] = null; }
+      await write(() => update(R("/"), up), "Préférence enregistrée");
       break; }
     case "admin-reset": sheetAdminReset(el.dataset.pid); break;
     case "admin-reset-ok": {
