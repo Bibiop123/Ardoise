@@ -147,9 +147,14 @@ function settle(bal){
 }
 
 /* ---------- accès aux données ---------- */
+/* préférences du profil, copiées une seule fois quand la personne arrive dans un groupe */
+function dietFor(pid){
+  const d = S.profiles.get(pid)?.diet || {};
+  return {vege: !!d.vege, noAlcohol: !!d.noAlcohol};
+}
 function withProfile(m){
   const p = m.pid ? S.profiles.get(m.pid) : null;
-  return p ? {...m, name: p.name || m.name, photo: p.photo || null, diet: {...(p.diet||{}), ...(m.diet||{})}} : m;
+  return p ? {...m, name: p.name || m.name, photo: p.photo || null} : m;
 }
 const membersOf = rid => (S.rooms.get(rid)?.members || []).map(withProfile);
 const expensesOf = rid => S.rooms.get(rid)?.expenses || [];
@@ -192,6 +197,10 @@ function watchRoom(rid){
       .filter(e => typeof e.amount==="number" && e.paidBy)
       .sort((a,b)=> (b.date||"").localeCompare(a.date||"") || (b.createdAt||0)-(a.createdAt||0));
     S.rooms.set(rid, {id:rid, ...v.info, members, expenses});
+    /* groupes créés avant cette version : on fige une fois mes préférences actuelles */
+    const mine = S.myPid && members.find(m => m.pid===S.myPid && !m.diet);
+    const pd = S.myPid && S.profiles.get(S.myPid)?.diet;
+    if(mine && pd && (pd.vege || pd.noAlcohol)) update(R(`rooms/${rid}/members/${mine.id}`), {diet: dietFor(S.myPid)}).catch(()=>{});
     render();
   }, err => {
     console.warn(err);
@@ -565,7 +574,7 @@ function sheetMyProfile(){
     <div class="field"><label>Mes préférences</label>
       <button class="switch-row" data-act="me-diet" data-f="vege" role="switch" aria-checked="${!!p.diet?.vege}"><span>🥗 Je suis végétarien·ne</span><span class="switch${p.diet?.vege?" on":""}"></span></button>
       <button class="switch-row" data-act="me-diet" data-f="noAlcohol" role="switch" aria-checked="${!!p.diet?.noAlcohol}"><span>🍷 Je ne bois pas d'alcool</span><span class="switch${p.diet?.noAlcohol?" on":""}"></span></button>
-      <span class="hint">Appliqué automatiquement dans tous tes groupes, présents et futurs, pour les lignes « dont alcool / viande / végé ».</span></div>
+      <span class="hint">C'est ton réglage de départ quand tu rejoins un nouveau groupe. Tes groupes actuels ne changent pas : dans chaque groupe, tu peux l'ajuster dans l'onglet Membres.</span></div>
     <details class="fold"><summary>Changer mon code</summary>
       ${pinField("f-pin","Nouveau code (4 à 6 chiffres)")}${pinField("f-pin2","Confirme le nouveau code")}
       <button class="btn ghost block" data-act="me-pin">Changer mon code</button></details>
@@ -624,7 +633,7 @@ async function createRoom(btn){
   const up = { [`rooms/${rid}/info`]: {name, createdAt:now, closed:false, createdBy:S.myPid}, [`rooms/${rid}/access/${S.myPid}`]: true, [`profiles/${S.myPid}/rooms/${rid}`]: true };
   pids.forEach((pid,k) => {
     up[`rooms/${rid}/access/${pid}`] = true;
-    up[`rooms/${rid}/members/${randomId(10)}`] = {pid, name:S.profiles.get(pid)?.name||"", createdAt:now+k};
+    up[`rooms/${rid}/members/${randomId(10)}`] = {pid, name:S.profiles.get(pid)?.name||"", diet:dietFor(pid), createdAt:now+k};
     up[`profiles/${pid}/rooms/${rid}`] = true;
   });
   F.others.forEach((o,k) => { up[`rooms/${rid}/members/${randomId(10)}`] = {name:o, createdAt:now+pids.length+k}; });
@@ -663,7 +672,7 @@ async function addMembers(btn){
   const {rid} = F, now = Date.now(), up = {};
   [...F.picked].forEach((pid,k) => {
     up[`rooms/${rid}/access/${pid}`] = true;
-    up[`rooms/${rid}/members/${randomId(10)}`] = {pid, name:S.profiles.get(pid)?.name||"", createdAt:now+k};
+    up[`rooms/${rid}/members/${randomId(10)}`] = {pid, name:S.profiles.get(pid)?.name||"", diet:dietFor(pid), createdAt:now+k};
     up[`profiles/${pid}/rooms/${rid}`] = true;
   });
   F.others.forEach((o,k) => { up[`rooms/${rid}/members/${randomId(10)}`] = {name:o, createdAt:now+100+k}; });
@@ -712,6 +721,7 @@ async function fileToAvatar(file){
 async function linkMember(rid, mid, pid, msg){
   return write(() => update(R("/"), {
     [`rooms/${rid}/members/${mid}/pid`]: pid,
+    ...((S.rooms.get(rid)?.members||[]).find(m => m.id===mid)?.diet ? {} : {[`rooms/${rid}/members/${mid}/diet`]: dietFor(pid)}),
     [`rooms/${rid}/access/${pid}`]: true,
     [`profiles/${pid}/rooms/${rid}`]: true,
   }), msg);
@@ -858,10 +868,7 @@ document.addEventListener("click", async ev => {
     case "me-diet": {
       const f = el.dataset.f, val = !myProfile()?.diet?.[f];
       el.setAttribute("aria-checked", val); el.querySelector(".switch")?.classList.toggle("on", val);
-      const up = {[`profiles/${S.myPid}/diet/${f}`]: val};
-      /* on retire les réglages faits à la main sur moi dans mes groupes, pour que le profil s'applique partout */
-      for(const rid of S.roomIds){ const me = (S.rooms.get(rid)?.members||[]).find(m => m.pid===S.myPid); if(me?.diet && f in me.diet) up[`rooms/${rid}/members/${me.id}/diet/${f}`] = null; }
-      await write(() => update(R("/"), up), "Préférence enregistrée");
+      await write(() => update(R(`profiles/${S.myPid}/diet`), {[f]: val}), "Préférence enregistrée pour tes prochains groupes");
       break; }
     case "admin-reset": sheetAdminReset(el.dataset.pid); break;
     case "admin-reset-ok": {
@@ -914,7 +921,7 @@ document.addEventListener("click", async ev => {
     case "claim-new": {
       const mid = randomId(10);
       await write(() => update(R("/"), {
-        [`rooms/${rid}/members/${mid}`]: {pid:S.myPid, name:myProfile()?.name||"", createdAt:Date.now()},
+        [`rooms/${rid}/members/${mid}`]: {pid:S.myPid, name:myProfile()?.name||"", diet:dietFor(S.myPid), createdAt:Date.now()},
         [`rooms/${rid}/access/${S.myPid}`]: true, [`profiles/${S.myPid}/rooms/${rid}`]: true,
       }), "Tu fais partie du groupe");
       break; }
