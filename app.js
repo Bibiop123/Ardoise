@@ -500,7 +500,11 @@ function dayLabel(iso){
 /* ---------- fenêtres ---------- */
 function openSheet(html){
   $("#sheetRoot").innerHTML = `<div class="scrim" data-act="close-scrim"><div class="sheet" role="dialog" aria-modal="true"><div class="grab"></div>${html}</div></div>`;
-  setTimeout(()=>$(".sheet input")?.focus({preventScroll:true}), 60);
+  /* sur ordinateur seulement : sur téléphone, ouvrir le clavier d'office cache la fenêtre */
+  if(matchMedia("(pointer: fine)").matches) setTimeout(() => {
+    const i = [...document.querySelectorAll(".sheet input:not([type=file])")].find(el => el.offsetParent !== null);
+    i?.focus({preventScroll:true});
+  }, 60);
 }
 function closeSheet(){ $("#sheetRoot").innerHTML=""; F=null; }
 const closeBtn = `<button class="pill-btn" data-act="close">Fermer</button>`;
@@ -1052,6 +1056,21 @@ document.addEventListener("change", e => {
   applySkin(id);
   const dot = $("#f-skin-dot"); if(dot && k){ dot.style.background = k.bg; dot.style.color = k.fg; }
   if(S.myPid) update(R(`profiles/${S.myPid}`), {skin:id}).catch(()=>{});
+});
+/* clavier du téléphone : la fenêtre du bas suit la zone visible, et le champ actif remonte au-dessus du clavier */
+const vv = window.visualViewport;
+function fitViewport(){
+  if(!vv) return;
+  const r = document.documentElement.style;
+  r.setProperty("--vvh", vv.height + "px");
+  r.setProperty("--vvtop", vv.offsetTop + "px");
+  document.body.classList.toggle("kb-open", window.innerHeight - vv.height > 120);
+}
+if(vv){ vv.addEventListener("resize", fitViewport); vv.addEventListener("scroll", fitViewport); fitViewport(); }
+document.addEventListener("focusin", e => {
+  const t = e.target;
+  if(!t.matches?.("input, select, textarea") || matchMedia("(pointer: fine)").matches) return;
+  setTimeout(() => t.scrollIntoView({block:"center", behavior:"smooth"}), 320);
 });
 window.addEventListener("hashchange", route);
 window.addEventListener("popstate", route);

@@ -297,3 +297,9 @@ input[type=text],input[type=date],input[type=number],input[type=password]{border
 .switch.on{background:var(--accent);border-color:var(--accent)}
 .switch.on::after{transform:translateX(18px);background:var(--accent-ink)}
 @media (prefers-reduced-motion:reduce){.switch,.switch::after{transition:none}}
+
+/* fenêtres du bas : toujours dans la zone visible, au-dessus du clavier */
+.scrim{inset:auto 0 auto 0;top:var(--vvtop,0px);height:var(--vvh,100%)}
+.sheet{max-height:calc(var(--vvh,100vh) - 24px);overscroll-behavior:contain;scroll-padding-block:80px}
+body.kb-open .sheet{border-radius:18px 18px 0 0;padding-bottom:16px}
+body.kb-open .fab{display:none}
