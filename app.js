@@ -463,7 +463,7 @@ function renderRoom(rid){
     <div class="top sticky"><button class="icon-btn" data-act="home" aria-label="Retour aux groupes">${ICON.back}</button>
       <div class="grow room-title">${esc(r.name)}</div>
       <button class="icon-btn" data-act="invite" aria-label="Inviter des amis">${ICON.share}</button>
-      ${r.closed ? `<button class="pill-btn" data-act="room-reopen">Rouvrir</button>` : `<button class="pill-btn" data-act="room-close-ask">🔒 Clôturer</button>`}
+      ${r.closed ? `<button class="pill-btn" data-act="room-reopen">Rouvrir</button>` : plan.length ? "" : `<button class="pill-btn" data-act="room-close-ask">🔒 Clôturer</button>`}
       <button class="icon-btn" data-act="room-settings" aria-label="Réglages du groupe">${ICON.gear}</button></div>
     ${r.closed ? (() => { const n = exps.filter(e=>e.kind!=="transfer").length, left = plan.reduce((s,t)=>s+t.amount,0);
       return `<section class="recap" aria-label="Bilan du groupe">
@@ -482,6 +482,7 @@ function renderRoom(rid){
     </div>
     <div class="list">${body}</div>
     ${r.closed ? `<button class="btn ghost block" data-act="room-reopen">Rouvrir l'événement</button>`
+               : plan.length ? `<div class="close-locked"><span aria-hidden="true">🔒</span><span>La clôture sera possible quand tout le monde aura réglé : encore ${plan.length} remboursement${plan.length>1?"s":""} (${money(plan.reduce((s,t)=>s+t.amount,0))}).</span></div>`
                : `<button class="btn ghost block close-btn" data-act="room-close-ask">🔒 Clôturer l'événement</button>`}`;
 
   let fab = $("#fab");
@@ -1005,14 +1006,14 @@ document.addEventListener("click", async ev => {
       break; }
     case "room-close-ask": {
       const r = rid, left = settle(balances(r)).reduce((s,t)=>s+t.amount,0);
+      if(left){ toast(`Il reste ${money(left)} à rembourser : la clôture sera possible quand tout le monde aura réglé.`); break; }
       F = {type:"close", rid:r};
       openSheet(`<div class="sheet-head"><h2>Clôturer « ${esc(S.rooms.get(r)?.name)} » ?</h2></div>
-        ${left ? `<div class="notice err">Attention : il reste ${money(left)} à rembourser dans ce groupe. Les remboursements resteront visibles et pourront encore être réglés.</div>`
-               : `<div class="notice" style="background:var(--owed-soft);color:var(--owed);font-weight:600">🎉 Tout le monde est à jour, parfait pour clôturer.</div>`}
+        <div class="notice" style="background:var(--owed-soft);color:var(--owed);font-weight:600">🎉 Tout le monde est à jour, parfait pour clôturer.</div>
         <p class="hint" style="margin:0">Une fois clôturé, le groupe passe dans « Groupes clôturés » et on ne peut plus y ajouter ni modifier de dépenses. Tu pourras le rouvrir à tout moment.</p>
         <div class="two"><button class="btn ghost" data-act="close">Annuler</button><button class="btn" data-act="room-close-ok">Clôturer</button></div>`);
       break; }
-    case "room-close-ok": { const r=F.rid; el.disabled=true; if(await write(()=>update(R(`rooms/${r}/info`),{closed:true, closedAt:Date.now()}), "Groupe clôturé")) closeSheet(); else el.disabled=false; break; }
+    case "room-close-ok": { const r=F.rid; if(settle(balances(r)).length){ closeSheet(); toast("Un remboursement vient d'être ajouté : il reste des paiements à régler."); break; } el.disabled=true; if(await write(()=>update(R(`rooms/${r}/info`),{closed:true, closedAt:Date.now()}), "Groupe clôturé")) closeSheet(); else el.disabled=false; break; }
     case "room-reopen": await write(()=>update(R(`rooms/${rid}/info`),{closed:false}), "Groupe rouvert"); break;
     case "room-settings": sheetRoomSettings(rid); break;
     case "room-rename": { const n=$("#f-rname").value.trim(); if(!n){ toast("Donne un nom au groupe."); break; } if(await write(()=>update(R(`rooms/${F.rid}/info`),{name:n}), "Nom enregistré")) closeSheet(); break; }
