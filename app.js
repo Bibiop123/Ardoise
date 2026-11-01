@@ -108,19 +108,28 @@ const PART_KINDS = [
   {k:"autre",  label:"Autre",  ico:"➕"},
 ];
 const partIco = k => (PART_KINDS.find(p => p.k===k) || PART_KINDS[3]).ico;
+/* qui partage une ligne « dont » : calculé d'après l'onglet Membres pour alcool / viande / végé */
+function partWho(p, e, mem){
+  if(!p || p.k==="autre" || !mem) return p?.who || {};
+  const inExp = m => (e.split?.[m.id]||0) > 0;
+  const ok = {alcool: m => !m.diet?.noAlcohol, viande: m => !m.diet?.vege, vege: m => !!m.diet?.vege}[p.k] || (() => true);
+  let list = mem.filter(m => inExp(m) && ok(m));
+  if(!list.length) list = mem.filter(inExp);
+  const who = {}; list.forEach(m => who[m.id] = 1); return who;
+}
 /* part de chacun pour une dépense, en tenant compte des lignes « dont » */
-function expShares(e){
+function expShares(e, mem){
   const parts = Array.isArray(e.parts) ? e.parts.filter(p => p && p.amount > 0) : [];
   const extra = parts.reduce((s,p) => s + p.amount, 0);
   const res = shares(Math.max(0, e.amount - extra), e.split);
-  for(const p of parts) for(const [m,c] of Object.entries(shares(p.amount, p.who))) res[m] = (res[m]||0) + c;
+  for(const p of parts) for(const [m,c] of Object.entries(shares(p.amount, partWho(p, e, mem)))) res[m] = (res[m]||0) + c;
   return res;
 }
 function balances(rid){
-  const bal = {}; for(const m of membersOf(rid)) bal[m.id] = 0;
+  const mem = membersOf(rid), bal = {}; for(const m of mem) bal[m.id] = 0;
   for(const e of expensesOf(rid)){
     bal[e.paidBy] = (bal[e.paidBy]||0) + e.amount;
-    for(const [m,c] of Object.entries(expShares(e))) bal[m] = (bal[m]||0) - c;
+    for(const [m,c] of Object.entries(expShares(e, mem))) bal[m] = (bal[m]||0) - c;
   }
   return bal;
 }
@@ -406,7 +415,7 @@ function renderRoom(rid){
       let last = ""; body = `<div class="total-bar"><span class="label">Total du groupe</span><b class="num">${money(total)}</b></div>`;
       for(const e of exps){
         if(e.date !== last){ last = e.date; body += `<div class="day">${dayLabel(e.date)}</div>`; }
-        const p = member(rid, e.paidBy), sh = expShares(e), myShare = me ? (sh[me.id]||0) : 0;
+        const p = member(rid, e.paidBy), sh = expShares(e, mem), myShare = me ? (sh[me.id]||0) : 0;
         const parts = Object.values(e.split||{}).reduce((s,w)=>s+(w>0?w:0),0);
         if(e.kind==="transfer"){
           const to = member(rid, Object.keys(e.split||{})[0]);
@@ -739,19 +748,35 @@ function drawParts(){
   const box = $("#f-parts"); if(!box) return;
   const mem = membersOf(F.rid);
   box.innerHTML = (F.parts||[]).map((p,i) => {
-    const n = Object.values(p.who).filter(w => w>0).length, amt = parseAmount(p.amountStr);
+    const auto = p.k !== "autre", amt = parseAmount(p.amountStr);
+    const n = Object.values(auto ? partWho(p, {split:F.split}, mem) : p.who).filter(w => w>0).length;
     return `<div class="part-card">
       <div class="part-head"><span class="part-ico" aria-hidden="true">${partIco(p.k)}</span>
         ${p.k==="autre" ? `<input type="text" class="part-label" data-i="${i}" maxlength="24" value="${esc(p.label)}" placeholder="Quoi ?" aria-label="Nom de la partie">` : `<b>Dont ${esc(p.label.toLowerCase())}</b>`}
         <button class="pick-x" data-act="part-del" data-i="${i}" aria-label="Retirer cette partie">×</button></div>
       <div class="part-amt"><input type="text" inputmode="decimal" class="part-amount" data-i="${i}" value="${esc(p.amountStr)}" placeholder="0,00" aria-label="Montant"><span>€</span>
         <span class="hint part-each" data-i="${i}">${n && amt ? `≈ ${money(Math.floor(amt/n))} chacun` : ""}</span></div>
-      <span class="hint">Qui en a profité ?</span>
-      <div class="pick-row">${mem.map(m => `<button class="pick${p.who[m.id]>0?" on":""}" data-act="part-who" data-i="${i}" data-mid="${m.id}" aria-pressed="${p.who[m.id]>0}">${avatar(m,"sm")}${esc(m.name)}</button>`).join("")}</div>
+      ${auto ? `<div class="part-auto" data-i="${i}"></div>`
+      : `<span class="hint">Qui en a profité ?</span>
+      <div class="pick-row">${mem.map(m => `<button class="pick${p.who[m.id]>0?" on":""}" data-act="part-who" data-i="${i}" data-mid="${m.id}" aria-pressed="${p.who[m.id]>0}">${avatar(m,"sm")}${esc(m.name)}</button>`).join("")}</div>`}
     </div>`; }).join("");
 }
+function drawPartWho(){
+  const mem = membersOf(F.rid);
+  document.querySelectorAll(".part-auto").forEach(box => {
+    const p = F.parts[+box.dataset.i]; if(!p) return;
+    const who = partWho(p, {split:F.split}, mem), list = mem.filter(m => who[m.id]);
+    const noFlag = !mem.some(m => p.k==="alcool" ? m.diet?.noAlcohol : m.diet?.vege);
+    box.innerHTML = `<span class="hint">Partagé entre ${list.length} personne${list.length>1?"s":""}, d'après l'onglet Membres :</span>
+      <div class="faces">${list.map(m => avatar(m,"sm")).join("")}</div>
+      ${noFlag ? `<span class="hint">${p.k==="alcool" ? "Personne n'est noté comme ne buvant pas d'alcool" : "Personne n'est noté végétarien"} : active les boutons 🥗 / 🍷 dans Membres pour affiner.</span>` : ""}`;
+    const each = document.querySelector(`.part-each[data-i="${box.dataset.i}"]`), amt = parseAmount(p.amountStr);
+    if(each) each.textContent = list.length && amt ? `≈ ${money(Math.floor(amt/list.length))} chacun` : "";
+  });
+}
 function drawSplit(){
-  const amount = parseAmount($("#f-amount")?.value||""), sh = expShares({amount, split:F.split, parts:formParts()});
+  const amount = parseAmount($("#f-amount")?.value||""), sh = expShares({amount, split:F.split, parts:formParts()}, membersOf(F.rid));
+  drawPartWho();
   const isT = F.kind==="transfer";
   $("#f-split").innerHTML = membersOf(F.rid).map(m => { const w = F.split[m.id]||0;
     return `<div class="split-row ${w || sh[m.id] ? "" : "off"}">${avatar(m,"sm")}<span class="grow">${esc(m.name)}</span>
@@ -767,10 +792,14 @@ async function saveExpense(){
   const split = {}; for(const [k,v] of Object.entries(F.split)) if(v>0) split[k]=v;
   const parts = [];
   for(const p of formParts()){
-    const who = {}; for(const [k,v] of Object.entries(p.who||{})) if(v>0) who[k]=1;
-    if(!p.amount){ toast(`Indique le montant de « ${p.label} », ou retire cette ligne.`); return; }
-    if(!Object.keys(who).length){ toast(`Choisis qui a profité de « ${p.label} ».`); return; }
-    parts.push({k:p.k, label:(p.label||"Autre").slice(0,24), amount:p.amount, who});
+    if(!p.amount){ toast(`Indique le montant de « ${p.label||"Autre"} », ou retire cette ligne.`); return; }
+    const part = {k:p.k, label:(p.label||"Autre").slice(0,24), amount:p.amount};
+    if(p.k==="autre"){
+      const who = {}; for(const [k,v] of Object.entries(p.who||{})) if(v>0) who[k]=1;
+      if(!Object.keys(who).length){ toast(`Choisis qui a profité de « ${part.label} ».`); return; }
+      part.who = who;
+    }
+    parts.push(part);
   }
   const extra = parts.reduce((s,p)=>s+p.amount,0);
   if(extra > amount){ toast("Les montants « dont » dépassent le total de la dépense."); return; }
@@ -780,7 +809,6 @@ async function saveExpense(){
   if(parts.length) data.parts = parts;
   const {rid, eid} = F;
   const up = { [`rooms/${rid}/expenses/${eid || randomId(12)}`]: data };
-  for(const p of parts) if(p.k!=="autre") up[`rooms/${rid}/info/presets/${p.k}`] = p.who;
   const ok = await write(() => update(R("/"), up), eid ? "Dépense modifiée" : "Dépense ajoutée");
   if(ok) closeSheet();
 }
@@ -916,15 +944,8 @@ document.addEventListener("click", async ev => {
     case "exp-save": saveExpense(); break;
     case "part-add": {
       const kind = PART_KINDS.find(p => p.k===el.dataset.k) || PART_KINDS[3];
-      const mem = membersOf(F.rid), inSplit = m => (F.split[m.id]||0) > 0;
-      const hasDiet = mem.some(m => m.diet?.vege || m.diet?.noAlcohol);
-      const preset = S.rooms.get(F.rid)?.presets?.[kind.k];
       const who = {};
-      if(hasDiet && kind.k==="alcool") mem.filter(m => inSplit(m) && !m.diet?.noAlcohol).forEach(m => who[m.id] = 1);
-      else if(hasDiet && kind.k==="viande") mem.filter(m => inSplit(m) && !m.diet?.vege).forEach(m => who[m.id] = 1);
-      else if(hasDiet && kind.k==="vege") mem.filter(m => inSplit(m) && m.diet?.vege).forEach(m => who[m.id] = 1);
-      else if(preset) mem.forEach(m => { if(preset[m.id]) who[m.id] = 1; });
-      else mem.filter(inSplit).forEach(m => who[m.id] = 1);
+      if(kind.k==="autre") membersOf(F.rid).filter(m => (F.split[m.id]||0) > 0).forEach(m => who[m.id] = 1);
       F.parts.push({k:kind.k, label: kind.k==="autre" ? "" : kind.label, amountStr:"", who});
       drawParts(); drawSplit();
       setTimeout(() => { const ins = document.querySelectorAll(".part-amount"); ins[ins.length-1]?.focus(); }, 30);

@@ -287,3 +287,5 @@ input[type=text],input[type=date],input[type=number],input[type=password]{border
 .diet-btn.on{filter:none;opacity:1;background:var(--accent-soft);border-color:var(--accent)}
 .diet-btn:disabled{cursor:default}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.part-auto{display:flex;flex-direction:column;gap:6px}
+.part-auto .faces{flex-wrap:wrap;row-gap:4px}
