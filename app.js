@@ -101,11 +101,26 @@ function shares(amount, split){
   while(used < amount){ res[rem[k % rem.length][0]]++; used++; k++; }
   return res;
 }
+const PART_KINDS = [
+  {k:"alcool", label:"Alcool", ico:"🍷"},
+  {k:"viande", label:"Viande", ico:"🥩"},
+  {k:"vege",   label:"Végé",   ico:"🥗"},
+  {k:"autre",  label:"Autre",  ico:"➕"},
+];
+const partIco = k => (PART_KINDS.find(p => p.k===k) || PART_KINDS[3]).ico;
+/* part de chacun pour une dépense, en tenant compte des lignes « dont » */
+function expShares(e){
+  const parts = Array.isArray(e.parts) ? e.parts.filter(p => p && p.amount > 0) : [];
+  const extra = parts.reduce((s,p) => s + p.amount, 0);
+  const res = shares(Math.max(0, e.amount - extra), e.split);
+  for(const p of parts) for(const [m,c] of Object.entries(shares(p.amount, p.who))) res[m] = (res[m]||0) + c;
+  return res;
+}
 function balances(rid){
   const bal = {}; for(const m of membersOf(rid)) bal[m.id] = 0;
   for(const e of expensesOf(rid)){
     bal[e.paidBy] = (bal[e.paidBy]||0) + e.amount;
-    for(const [m,c] of Object.entries(shares(e.amount, e.split))) bal[m] = (bal[m]||0) - c;
+    for(const [m,c] of Object.entries(expShares(e))) bal[m] = (bal[m]||0) - c;
   }
   return bal;
 }
@@ -391,7 +406,7 @@ function renderRoom(rid){
       let last = ""; body = `<div class="total-bar"><span class="label">Total du groupe</span><b class="num">${money(total)}</b></div>`;
       for(const e of exps){
         if(e.date !== last){ last = e.date; body += `<div class="day">${dayLabel(e.date)}</div>`; }
-        const p = member(rid, e.paidBy), sh = shares(e.amount, e.split), myShare = me ? (sh[me.id]||0) : 0;
+        const p = member(rid, e.paidBy), sh = expShares(e), myShare = me ? (sh[me.id]||0) : 0;
         const parts = Object.values(e.split||{}).reduce((s,w)=>s+(w>0?w:0),0);
         if(e.kind==="transfer"){
           const to = member(rid, Object.keys(e.split||{})[0]);
@@ -399,7 +414,7 @@ function renderRoom(rid){
             <div class="grow"><div class="t">Remboursement</div><div class="s">${esc(p.name)} → ${esc(to.name)}</div></div><div class="r"><b>${money(e.amount)}</b></div></button>`;
         } else {
           body += `<button class="row" data-act="edit-exp" data-eid="${e.id}">${avatar(p)}
-            <div class="grow"><div class="t">${esc(e.title||"Dépense")}</div><div class="s">${esc(p.name)} a payé · ${parts} part${parts>1?"s":""}</div></div>
+            <div class="grow"><div class="t">${esc(e.title||"Dépense")}</div><div class="s">${esc(p.name)} a payé · ${parts} part${parts>1?"s":""}${(e.parts||[]).filter(x=>x&&x.amount>0).map(x => ` · ${partIco(x.k)} dont ${money(x.amount)}`).join("")}</div></div>
             <div class="r"><b>${money(e.amount)}</b>${me ? `<small>${myShare?`ta part ${money(myShare)}`:"pas concerné"}</small>`:""}</div></button>`;
         }
       }
@@ -688,7 +703,8 @@ async function linkMember(rid, mid, pid, msg){
 function sheetExpense(rid, eid){
   const e = eid ? expensesOf(rid).find(x=>x.id===eid) : null, me = meIn(rid), mem = membersOf(rid);
   const split = {}; for(const m of mem) split[m.id] = e ? (e.split?.[m.id]||0) : 1;
-  F = {type:"expense", rid, eid, kind:e?.kind||"expense", paidBy: e?.paidBy || me?.id || mem[0]?.id, split, confirmDel:false, createdAt:e?.createdAt};
+  F = {type:"expense", rid, eid, kind:e?.kind||"expense", paidBy: e?.paidBy || me?.id || mem[0]?.id, split, confirmDel:false, createdAt:e?.createdAt,
+    parts: (e?.parts||[]).filter(Boolean).map(p => ({k:p.k||"autre", label:p.label||"Autre", amountStr:String(p.amount/100).replace(".",","), who:{...(p.who||{})}}))};
   const isT = F.kind==="transfer";
   openSheet(`<div class="sheet-head"><h2>${isT ? "Remboursement" : e ? "Modifier la dépense" : "Nouvelle dépense"}</h2>${closeBtn}</div>
     ${isT ? "" : `<div class="field"><label for="f-title">Quoi ?</label><input type="text" id="f-title" maxlength="60" value="${esc(e?.title||"")}" placeholder="Courses, essence, resto…"></div>`}
@@ -701,20 +717,40 @@ function sheetExpense(rid, eid){
       ${isT ? "" : `<div class="inline-actions"><button class="pill-btn" data-act="split-all">Tout le monde</button><button class="pill-btn" data-act="split-none">Personne</button></div>`}
       <div class="list" id="f-split" style="gap:6px"></div>
       ${isT ? "" : `<span class="hint">Une part par personne. Mets 2 parts si quelqu'un paie aussi pour un invité ou un conjoint.</span>`}</div>
+    ${isT ? "" : `<div class="field"><label>Dont…</label>
+      <span class="hint">Une partie que tout le monde n'a pas consommée ? Ajoute-la ici : elle est retirée du total et partagée seulement entre ceux qui en ont profité.</span>
+      <div id="f-parts" class="list" style="gap:10px"></div>
+      <div class="inline-actions">${PART_KINDS.map(p => `<button class="pill-btn" data-act="part-add" data-k="${p.k}">${p.ico} Dont ${p.label.toLowerCase()}</button>`).join("")}</div></div>`}
     <button class="btn block" data-act="exp-save">${e ? "Enregistrer" : "Ajouter la dépense"}</button>
     ${e ? `<button class="btn danger block" data-act="exp-del">Supprimer</button>` : ""}`);
-  drawPayer(); drawSplit();
+  drawPayer(); drawParts(); drawSplit();
   $("#f-amount").addEventListener("input", drawSplit);
 }
 function drawPayer(){
   $("#f-payer").innerHTML = membersOf(F.rid).map(m => `<button class="pick ${m.id===F.paidBy?"on":""}" data-act="payer" data-mid="${m.id}" aria-pressed="${m.id===F.paidBy}">${avatar(m,"sm")}${esc(m.name)}</button>`).join("");
 }
+function formParts(){ return (F.parts||[]).map(p => ({k:p.k, label:p.label, amount:parseAmount(p.amountStr), who:p.who})); }
+function drawParts(){
+  const box = $("#f-parts"); if(!box) return;
+  const mem = membersOf(F.rid);
+  box.innerHTML = (F.parts||[]).map((p,i) => {
+    const n = Object.values(p.who).filter(w => w>0).length, amt = parseAmount(p.amountStr);
+    return `<div class="part-card">
+      <div class="part-head"><span class="part-ico" aria-hidden="true">${partIco(p.k)}</span>
+        ${p.k==="autre" ? `<input type="text" class="part-label" data-i="${i}" maxlength="24" value="${esc(p.label)}" placeholder="Quoi ?" aria-label="Nom de la partie">` : `<b>Dont ${esc(p.label.toLowerCase())}</b>`}
+        <button class="pick-x" data-act="part-del" data-i="${i}" aria-label="Retirer cette partie">×</button></div>
+      <div class="part-amt"><input type="text" inputmode="decimal" class="part-amount" data-i="${i}" value="${esc(p.amountStr)}" placeholder="0,00" aria-label="Montant"><span>€</span>
+        <span class="hint part-each" data-i="${i}">${n && amt ? `≈ ${money(Math.floor(amt/n))} chacun` : ""}</span></div>
+      <span class="hint">Qui en a profité ?</span>
+      <div class="pick-row">${mem.map(m => `<button class="pick${p.who[m.id]>0?" on":""}" data-act="part-who" data-i="${i}" data-mid="${m.id}" aria-pressed="${p.who[m.id]>0}">${avatar(m,"sm")}${esc(m.name)}</button>`).join("")}</div>
+    </div>`; }).join("");
+}
 function drawSplit(){
-  const amount = parseAmount($("#f-amount")?.value||""), sh = shares(amount, F.split);
+  const amount = parseAmount($("#f-amount")?.value||""), sh = expShares({amount, split:F.split, parts:formParts()});
   const isT = F.kind==="transfer";
   $("#f-split").innerHTML = membersOf(F.rid).map(m => { const w = F.split[m.id]||0;
-    return `<div class="split-row ${w?"":"off"}">${avatar(m,"sm")}<span class="grow">${esc(m.name)}</span>
-      <span class="share">${w && amount ? money(sh[m.id]||0) : "—"}</span>
+    return `<div class="split-row ${w || sh[m.id] ? "" : "off"}">${avatar(m,"sm")}<span class="grow">${esc(m.name)}</span>
+      <span class="share">${amount && sh[m.id] ? money(sh[m.id]) : "—"}</span>
       ${isT ? `<button class="pill-btn" data-act="t-to" data-mid="${m.id}" aria-pressed="${!!w}">${w?"✓":"Choisir"}</button>`
       : `<div class="stepper"><button data-act="w-" data-mid="${m.id}" aria-label="Une part de moins pour ${esc(m.name)}">−</button><span>${w}</span><button data-act="w+" data-mid="${m.id}" aria-label="Une part de plus pour ${esc(m.name)}">+</button></div>`}
     </div>`; }).join("");
@@ -724,11 +760,23 @@ async function saveExpense(){
   if(!amount){ toast("Indique un montant."); return; }
   if(!F.paidBy){ toast("Choisis qui a payé."); return; }
   const split = {}; for(const [k,v] of Object.entries(F.split)) if(v>0) split[k]=v;
-  if(!Object.keys(split).length){ toast("Choisis pour qui est la dépense."); return; }
+  const parts = [];
+  for(const p of formParts()){
+    const who = {}; for(const [k,v] of Object.entries(p.who||{})) if(v>0) who[k]=1;
+    if(!p.amount){ toast(`Indique le montant de « ${p.label} », ou retire cette ligne.`); return; }
+    if(!Object.keys(who).length){ toast(`Choisis qui a profité de « ${p.label} ».`); return; }
+    parts.push({k:p.k, label:(p.label||"Autre").slice(0,24), amount:p.amount, who});
+  }
+  const extra = parts.reduce((s,p)=>s+p.amount,0);
+  if(extra > amount){ toast("Les montants « dont » dépassent le total de la dépense."); return; }
+  if(extra < amount && !Object.keys(split).length){ toast("Choisis pour qui est la dépense."); return; }
   const data = { kind:F.kind, title: F.kind==="transfer" ? "Remboursement" : ($("#f-title").value.trim() || "Dépense"),
     amount, paidBy:F.paidBy, split, date: $("#f-date").value || today(), createdAt: F.createdAt || Date.now() };
+  if(parts.length) data.parts = parts;
   const {rid, eid} = F;
-  const ok = await write(() => set(R(`rooms/${rid}/expenses/${eid || randomId(12)}`), data), eid ? "Dépense modifiée" : "Dépense ajoutée");
+  const up = { [`rooms/${rid}/expenses/${eid || randomId(12)}`]: data };
+  for(const p of parts) if(p.k!=="autre") up[`rooms/${rid}/info/presets/${p.k}`] = p.who;
+  const ok = await write(() => update(R("/"), up), eid ? "Dépense modifiée" : "Dépense ajoutée");
   if(ok) closeSheet();
 }
 
@@ -861,6 +909,21 @@ document.addEventListener("click", async ev => {
     case "split-all": for(const m of membersOf(F.rid)) F.split[m.id]=Math.max(1,F.split[m.id]||0); drawSplit(); break;
     case "split-none": for(const k in F.split) F.split[k]=0; drawSplit(); break;
     case "exp-save": saveExpense(); break;
+    case "part-add": {
+      const kind = PART_KINDS.find(p => p.k===el.dataset.k) || PART_KINDS[3];
+      const preset = S.rooms.get(F.rid)?.presets?.[kind.k];
+      const who = {};
+      if(preset) for(const m of membersOf(F.rid)) { if(preset[m.id]) who[m.id] = 1; }
+      else for(const [k,v] of Object.entries(F.split)) if(v>0) who[k] = 1;
+      F.parts.push({k:kind.k, label: kind.k==="autre" ? "" : kind.label, amountStr:"", who});
+      drawParts(); drawSplit();
+      setTimeout(() => { const ins = document.querySelectorAll(".part-amount"); ins[ins.length-1]?.focus(); }, 30);
+      break; }
+    case "part-del": F.parts.splice(+el.dataset.i, 1); drawParts(); drawSplit(); break;
+    case "part-who": {
+      const p = F.parts[+el.dataset.i], mid = el.dataset.mid;
+      p.who[mid] = p.who[mid] > 0 ? 0 : 1;
+      drawParts(); drawSplit(); break; }
     case "exp-del":
       if(!F.confirmDel){ F.confirmDel=true; el.textContent="Confirmer la suppression"; break; }
       { const {rid:r, eid} = F; if(await write(()=>remove(R(`rooms/${r}/expenses/${eid}`)), "Dépense supprimée")) closeSheet(); }
@@ -916,6 +979,16 @@ $("#photoInput").addEventListener("change", async e => {
   catch{ toast("Cette image ne peut pas être lue. Essaie un JPG ou un PNG."); }
 });
 document.addEventListener("keydown", e => { if(e.key==="Escape" && F) closeSheet(); });
+document.addEventListener("input", e => {
+  if(!F || F.type!=="expense") return;
+  const t = e.target, i = +t.dataset.i;
+  if(t.classList.contains("part-amount")){
+    F.parts[i].amountStr = t.value;
+    const p = F.parts[i], n = Object.values(p.who).filter(w=>w>0).length, amt = parseAmount(p.amountStr);
+    const each = document.querySelector(`.part-each[data-i="${i}"]`); if(each) each.textContent = n && amt ? `≈ ${money(Math.floor(amt/n))} chacun` : "";
+    drawSplit();
+  } else if(t.classList.contains("part-label")) F.parts[i].label = t.value;
+});
 document.addEventListener("change", e => {
   if(e.target.id !== "f-skin") return;
   const id = e.target.value, k = SKINS.find(s => s.id===id);
