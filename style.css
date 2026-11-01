@@ -277,3 +277,13 @@ input[type=text],input[type=date],input[type=number],input[type=password]{border
 .part-amt{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .part-amt .part-amount{width:130px;font-family:var(--f-display);font-weight:700;font-size:1.2rem}
 .part-amt > span:not(.hint){font-weight:700}
+
+/* régime alimentaire dans Membres */
+.member-row{padding:6px 8px 6px 6px}
+.member-main{flex:1;min-width:0;display:flex;align-items:center;gap:12px;border:0;background:none;color:inherit;text-align:left;padding:6px;border-radius:12px}
+.member-main .grow{min-width:0}
+.diet{display:flex;gap:6px;flex:none}
+.diet-btn{width:34px;height:34px;border-radius:50%;border:1px solid var(--edge);background:transparent;display:grid;place-items:center;font-size:1rem;filter:grayscale(1);opacity:.35;transition:opacity .15s,filter .15s}
+.diet-btn.on{filter:none;opacity:1;background:var(--accent-soft);border-color:var(--accent)}
+.diet-btn:disabled{cursor:default}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}

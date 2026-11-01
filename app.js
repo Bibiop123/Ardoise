@@ -430,8 +430,13 @@ function renderRoom(rid){
       : `<div class="notice" style="background:var(--owed-soft);color:var(--owed);font-weight:600">🎉 Bravo à tous, tout le monde est à jour !</div>`;
     body += `<p class="hint" style="margin:0 4px">Le nombre de remboursements est réduit au minimum. « Réglé » enregistre le paiement dans les dépenses.</p>`;
   } else {
-    body = mem.map(m => `<button class="row" data-act="edit-member" data-mid="${m.id}">${avatar(m)}<div class="grow"><div class="t">${esc(m.name)}</div>
-      <div class="s">${m.id===me?.id ? "C'est toi" : m.pid ? "A un profil Ardoise" : "Pas encore de profil"}</div></div><span class="muted" style="font-size:.85rem">${m.pid && m.pid!==S.myPid ? "Voir" : "Modifier"}</span></button>`).join("")
+    body = mem.map(m => `<div class="row member-row"><button class="member-main" data-act="edit-member" data-mid="${m.id}">${avatar(m)}<div class="grow"><div class="t">${esc(m.name)}</div>
+      <div class="s">${m.id===me?.id ? "C'est toi" : m.pid ? "A un profil Ardoise" : "Pas encore de profil"}</div></div></button>
+      <div class="diet">
+        <button class="diet-btn${m.diet?.vege ? " on" : ""}" data-act="diet" data-mid="${m.id}" data-f="vege" aria-pressed="${!!m.diet?.vege}" title="Végétarien" ${editable?"":"disabled"}><span aria-hidden="true">🥗</span><span class="sr-only">Végétarien</span></button>
+        <button class="diet-btn${m.diet?.noAlcohol ? "" : " on"}" data-act="diet" data-mid="${m.id}" data-f="noAlcohol" aria-pressed="${!m.diet?.noAlcohol}" title="${m.diet?.noAlcohol ? "Ne boit pas d'alcool" : "Boit de l'alcool"}" ${editable?"":"disabled"}><span aria-hidden="true">🍷</span><span class="sr-only">Boit de l'alcool</span></button>
+      </div></div>`).join("")
+      + `<p class="hint" style="margin:0 4px">🥗 allumé : végétarien · 🍷 éteint : ne boit pas d'alcool. Les lignes « dont alcool » et « dont viande » en tiennent compte automatiquement.</p>`
       + (editable ? `<button class="btn ghost block" data-act="add-member">${plusSm} Ajouter des participants</button>` : "");
   }
 
@@ -911,13 +916,25 @@ document.addEventListener("click", async ev => {
     case "exp-save": saveExpense(); break;
     case "part-add": {
       const kind = PART_KINDS.find(p => p.k===el.dataset.k) || PART_KINDS[3];
+      const mem = membersOf(F.rid), inSplit = m => (F.split[m.id]||0) > 0;
+      const hasDiet = mem.some(m => m.diet?.vege || m.diet?.noAlcohol);
       const preset = S.rooms.get(F.rid)?.presets?.[kind.k];
       const who = {};
-      if(preset) for(const m of membersOf(F.rid)) { if(preset[m.id]) who[m.id] = 1; }
-      else for(const [k,v] of Object.entries(F.split)) if(v>0) who[k] = 1;
+      if(hasDiet && kind.k==="alcool") mem.filter(m => inSplit(m) && !m.diet?.noAlcohol).forEach(m => who[m.id] = 1);
+      else if(hasDiet && kind.k==="viande") mem.filter(m => inSplit(m) && !m.diet?.vege).forEach(m => who[m.id] = 1);
+      else if(hasDiet && kind.k==="vege") mem.filter(m => inSplit(m) && m.diet?.vege).forEach(m => who[m.id] = 1);
+      else if(preset) mem.forEach(m => { if(preset[m.id]) who[m.id] = 1; });
+      else mem.filter(inSplit).forEach(m => who[m.id] = 1);
       F.parts.push({k:kind.k, label: kind.k==="autre" ? "" : kind.label, amountStr:"", who});
       drawParts(); drawSplit();
       setTimeout(() => { const ins = document.querySelectorAll(".part-amount"); ins[ins.length-1]?.focus(); }, 30);
+      break; }
+    case "diet": {
+      const r = rid, mid = el.dataset.mid, f = el.dataset.f, m = member(r, mid);
+      const val = !m.diet?.[f];
+      await write(() => update(R(`rooms/${r}/members/${mid}/diet`), {[f]: val}),
+        f==="vege" ? (val ? `${m.name} est noté·e végétarien·ne` : `${m.name} n'est plus noté·e végétarien·ne`)
+                   : (val ? `${m.name} ne boit pas d'alcool` : `${m.name} boit de l'alcool`));
       break; }
     case "part-del": F.parts.splice(+el.dataset.i, 1); drawParts(); drawSplit(); break;
     case "part-who": {
