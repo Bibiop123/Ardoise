@@ -101,7 +101,7 @@ function shares(amount, split){
   while(used < amount){ res[rem[k % rem.length][0]]++; used++; k++; }
   return res;
 }
-const LEAF = '<svg class="leaf" viewBox="0 0 24 24" aria-hidden="true"><path fill="#3f9a3a" d="M11.6 20.6C6 20.4 3 16.6 3.4 10.3c5.7-.2 8.6 3.4 8.2 10.3z"/><path fill="#7cc04a" d="M12.4 20.6c-.6-7.4 2.6-12.4 8.4-13.5.9 7.2-2.3 12.6-8.4 13.5z"/><path fill="none" stroke="#fff" stroke-width=".9" stroke-linecap="round" stroke-opacity=".75" d="M11.4 19.6C9.8 16.6 7.8 14 5.4 12.2M12.9 19.3c1.6-3.6 3.7-6.9 6.6-10"/></svg>';
+const LEAF = '<span class="nomeat" aria-hidden="true">🥩<svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" fill="none" stroke="#e86b5a" stroke-width="2.8"/><path d="M7.5 7.5l21 21" stroke="#e86b5a" stroke-width="2.8" stroke-linecap="round"/></svg></span>';
 const PART_KINDS = [
   {k:"alcool", label:"Alcool", ico:"🍷"},
   {k:"viande", label:"Viande", ico:"🥩"},
