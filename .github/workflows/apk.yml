@@ -1,0 +1,46 @@
+# Fabrique l'APK Android d'Ardoise dans le cloud et le publie dans la release « APK ».
+# Lien de téléchargement fixe : https://github.com/Bibiop123/Ardoise/releases/latest/download/ardoise.apk
+# Se lance tout seul quand le dossier android-app change, ou à la main depuis l'onglet Actions.
+name: Fabriquer l'APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["android-app/**", ".github/workflows/apk.yml"]
+permissions:
+  contents: write
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Préparer le projet Android
+        working-directory: android-app
+        run: |
+          npm install --no-audit --no-fund
+          npx cap sync android
+
+      - name: Fabriquer l'APK
+        working-directory: android-app/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/ardoise.apk"
+
+      - name: Publier dans la release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view apk >/dev/null 2>&1 || gh release create apk --title "Ardoise (Android)" --notes "APK d'Ardoise. Il ouvre l'appli en ligne : les mises à jour du site arrivent sans le réinstaller." --latest
+          gh release upload apk ardoise.apk --clobber
+          gh release edit apk --notes "APK d'Ardoise, mis à jour le $(date '+%d/%m/%Y'). Il ouvre l'appli en ligne : les mises à jour du site arrivent sans le réinstaller." --latest

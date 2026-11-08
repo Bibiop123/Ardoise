@@ -20,10 +20,18 @@ android {
         checkReleaseBuilds false
         abortOnError false
     }
+    signingConfigs {
+        // Clé fixe du projet : chaque nouvel APK peut s'installer par-dessus le précédent
+        ardoise {
+            storeFile file('ardoise.keystore')
+            storePassword 'ardoise123'
+            keyAlias 'ardoise'
+            keyPassword 'ardoise123'
+        }
+    }
     buildTypes {
         release {
-            // Signé avec la clé de debug, comme les APK Expo : installable directement sur le téléphone
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.ardoise
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

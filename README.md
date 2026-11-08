@@ -34,17 +34,13 @@ npx firebase-tools deploy --only database --project l-ar-7a10a
 
 ## Appli Android (APK)
 
-Le dossier `android-app/` est une petite coque Android (Capacitor) qui ouvre https://l-ar-7a10a.web.app.
-Les mises à jour du site arrivent donc dans l'APK sans la recompiler.
+L'APK est fabriqué automatiquement par GitHub (onglet **Actions → Fabriquer l'APK**) quand le dossier `android-app/` change,
+ou à la main avec le bouton **Run workflow**.
 
-Dans PowerShell, une commande à la fois :
+Lien de téléchargement, toujours la dernière version :
+https://github.com/Bibiop123/Ardoise/releases/latest/download/ardoise.apk
 
-```
-cd C:\projets\Ardoise\android-app
-npm install
-npx cap sync android
-cd android
-.\gradlew assembleRelease
-```
+L'APK ouvre https://l-ar-7a10a.web.app : les mises à jour du site arrivent sans le réinstaller.
+Il est signé avec une clé fixe (`android-app/android/app/ardoise.keystore`), donc chaque nouvel APK s'installe par-dessus l'ancien.
 
-L'APK se trouve ensuite dans `android-app\android\app\build\outputs\apk\release\app-release.apk`.
+Pour le fabriquer sur un PC Windows : double-clic sur `android-app/build-apk.bat`.
