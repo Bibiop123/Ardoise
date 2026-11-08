@@ -37,10 +37,11 @@ jobs:
           ./gradlew assembleRelease --no-daemon
           cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/ardoise.apk"
 
-      - name: Publier dans la release
+      - name: Publier une nouvelle version
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view apk >/dev/null 2>&1 || gh release create apk --title "Ardoise (Android)" --notes "APK d'Ardoise. Il ouvre l'appli en ligne : les mises à jour du site arrivent sans le réinstaller." --latest
-          gh release upload apk ardoise.apk --clobber
-          gh release edit apk --notes "APK d'Ardoise, mis à jour le $(date '+%d/%m/%Y'). Il ouvre l'appli en ligne : les mises à jour du site arrivent sans le réinstaller." --latest
+          TAG="v1.0.${{ github.run_number }}"
+          gh release create "$TAG" ardoise.apk --target "${{ github.sha }}" --latest \
+            --title "Ardoise $TAG" \
+            --notes "APK d'Ardoise du $(date '+%d/%m/%Y'). Il ouvre l'appli en ligne : les mises à jour du site arrivent sans le réinstaller. Il s'installe par-dessus la version précédente."
