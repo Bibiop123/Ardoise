@@ -37,14 +37,14 @@ npx firebase-tools deploy --only database --project l-ar-7a10a
 Le dossier `android-app/` est une petite coque Android (Capacitor) qui ouvre https://l-ar-7a10a.web.app.
 Les mises à jour du site arrivent donc dans l'APK sans la recompiler.
 
-Sur Windows, avec Node.js et Android Studio installés :
+Dans PowerShell, une commande à la fois :
 
 ```
-cd android-app
+cd C:\projets\Ardoise\android-app
 npm install
 npx cap sync android
-npx cap open android
+cd android
+.\gradlew assembleRelease
 ```
 
-Puis dans Android Studio : **Build → Build App Bundle(s) / APK(s) → Build APK(s)**.
-L'APK est créé dans `android-app/android/app/build/outputs/apk/debug/app-debug.apk`.
+L'APK se trouve ensuite dans `android-app\android\app\build\outputs\apk\release\app-release.apk`.
