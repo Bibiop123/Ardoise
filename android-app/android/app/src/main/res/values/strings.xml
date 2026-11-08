@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Ardoise</string>
+    <string name="title_activity_main">Ardoise</string>
+    <string name="package_name">app.ardoise.potes</string>
+    <string name="custom_url_scheme">app.ardoise.potes</string>
+</resources>

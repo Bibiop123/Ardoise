@@ -10,7 +10,9 @@
       "README.md",
       ".firebaserc",
       "**/.*",
-      ".github/**"
+      ".github/**",
+      "android-app/**",
+      "node_modules/**"
     ],
     "headers": [
       {

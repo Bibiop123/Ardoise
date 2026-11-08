@@ -31,3 +31,20 @@ npx firebase-tools deploy --only database --project l-ar-7a10a
 | `database.rules.json` | règles de sécurité de la base |
 | `.github/workflows/` | mise en ligne automatique |
 | `manifest.webmanifest`, `icon-*` | installation sur téléphone |
+
+## Appli Android (APK)
+
+Le dossier `android-app/` est une petite coque Android (Capacitor) qui ouvre https://l-ar-7a10a.web.app.
+Les mises à jour du site arrivent donc dans l'APK sans la recompiler.
+
+Sur Windows, avec Node.js et Android Studio installés :
+
+```
+cd android-app
+npm install
+npx cap sync android
+npx cap open android
+```
+
+Puis dans Android Studio : **Build → Build App Bundle(s) / APK(s) → Build APK(s)**.
+L'APK est créé dans `android-app/android/app/build/outputs/apk/debug/app-debug.apk`.

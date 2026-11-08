@@ -1,0 +1,12 @@
+{
+  "appId": "app.ardoise.potes",
+  "appName": "Ardoise",
+  "webDir": "www",
+  "server": {
+    "url": "https://l-ar-7a10a.web.app",
+    "cleartext": false
+  },
+  "android": {
+    "backgroundColor": "#0f1220"
+  }
+}
